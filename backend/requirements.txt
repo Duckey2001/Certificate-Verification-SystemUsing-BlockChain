@@ -1,0 +1,29 @@
+# FastAPI and web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.23
+
+# Authentication and security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-dotenv==1.0.0
+cryptography==41.0.7
+
+# Utilities
+requests==2.31.0
+PyYAML==6.0.2
+
+# OAuth
+authlib==1.3.0
+google-auth==2.25.2
+
+# Blockchain (Hardhat / Ethereum RPC)
+web3==6.15.1
+
+# Certificate processing dependencies
+pytesseract==0.3.10
+pillow==10.1.0
+pdf2image==1.17.0

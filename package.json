@@ -1,0 +1,35 @@
+{
+  "name": "lgcse-diploma-system",
+  "version": "1.0.0",
+  "description": "LGCSE Diploma Verification System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "db:connect": "psql -h localhost -p 5432 -U certivert -d CertiVert",
+    "db:test": "node test-connection.js",
+    "db:init": "psql -h localhost -U certivert -d CertiVert -f init-database.sql",
+    "db:reset": "npx prisma migrate reset --force",
+    "db:studio": "npx prisma studio",
+    "db:migrate": "npx prisma migrate deploy",
+    "db:seed": "node prisma/seed.js"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "bcrypt": "^6.0.0",
+    "canvas": "^3.2.1",
+    "cors": "^2.8.6",
+    "crypto": "^1.0.1",
+    "express": "^4.18.2",
+    "express-validator": "^7.3.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.1",
+    "multer": "^2.0.2",
+    "pdf-parse": "^2.4.5",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.11.0",
+    "qrcode": "^1.5.3",
+    "sharp": "^0.34.5",
+    "uuid": "^13.0.0"
+  }
+}

@@ -1,0 +1,384 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/security/Pausable.sol";
+
+contract LGCSEToken is ERC20, Ownable, ReentrancyGuard, Pausable {
+    // Structs
+    struct Project {
+        uint256 id;
+        string name;
+        string description;
+        address creator;
+        uint256 fundingGoal;
+        uint256 currentFunding;
+        uint256 deadline;
+        bool completed;
+        bool exists;
+    }
+    
+    struct Contribution {
+        uint256 amount;
+        uint256 timestamp;
+        bool refunded;
+    }
+    
+    struct Proposal {
+        uint256 id;
+        string title;
+        string description;
+        address proposer;
+        uint256 votesFor;
+        uint256 votesAgainst;
+        uint256 endTime;
+        bool executed;
+        bool exists;
+    }
+    
+    struct Stake {
+        uint256 amount;
+        uint256 lockUntil;
+        uint256 rewards;
+    }
+
+    // State variables
+    uint256 public constant TOKEN_PRICE = 0.01 ether; // 0.01 ETH per token
+    uint256 public constant MIN_CONTRIBUTION = 10 * 10**18; // 10 tokens
+    uint256 public constant MAX_SUPPLY = 1_000_000 * 10**18; // 1 million tokens
+    
+    uint256 public nextProjectId;
+    uint256 public nextProposalId;
+    uint256 public totalStaked;
+    uint256 public rewardRate = 100; // 1% reward rate
+    
+    // Mappings
+    mapping(uint256 => Project) public projects;
+    mapping(uint256 => mapping(address => Contribution)) public contributions;
+    mapping(uint256 => Proposal) public proposals;
+    mapping(uint256 => mapping(address => bool)) public hasVoted;
+    mapping(address => Stake) public stakes;
+    mapping(address => uint256) public rewards;
+    mapping(address => bool) public whitelisted;
+    
+    // Events
+    event TokensPurchased(address indexed buyer, uint256 amount, uint256 cost);
+    event ProjectCreated(uint256 indexed projectId, string name, address creator);
+    event ContributionMade(uint256 indexed projectId, address indexed contributor, uint256 amount);
+    event ProjectFunded(uint256 indexed projectId, uint256 totalAmount);
+    event ProposalCreated(uint256 indexed proposalId, string title, address proposer);
+    event VoteCast(uint256 indexed proposalId, address indexed voter, bool support, uint256 weight);
+    event ProposalExecuted(uint256 indexed proposalId);
+    event Staked(address indexed user, uint256 amount, uint256 lockUntil);
+    event Unstaked(address indexed user, uint256 amount, uint256 rewards);
+    event RewardClaimed(address indexed user, uint256 amount);
+    event WhitelistUpdated(address indexed user, bool status);
+
+    constructor() ERC20("LGCSE Project Token", "LGCSE") {
+        // Mint initial supply to owner
+        _mint(msg.sender, 100_000 * 10**18); // 100k tokens
+    }
+
+    // Modifiers
+    modifier projectExists(uint256 _projectId) {
+        require(projects[_projectId].exists, "Project does not exist");
+        _;
+    }
+    
+    modifier proposalExists(uint256 _proposalId) {
+        require(proposals[_proposalId].exists, "Proposal does not exist");
+        _;
+    }
+    
+    modifier onlyWhitelisted() {
+        require(whitelisted[msg.sender] || msg.sender == owner(), "Not whitelisted");
+        _;
+    }
+
+    // Token Functions
+    function buyTokens() external payable whenNotPaused {
+        uint256 tokenAmount = msg.value / TOKEN_PRICE;
+        require(tokenAmount > 0, "Invalid amount");
+        require(totalSupply() + tokenAmount <= MAX_SUPPLY, "Exceeds max supply");
+        
+        _mint(msg.sender, tokenAmount);
+        emit TokensPurchased(msg.sender, tokenAmount, msg.value);
+    }
+    
+    function withdrawETH() external onlyOwner {
+        uint256 balance = address(this).balance;
+        require(balance > 0, "No ETH to withdraw");
+        payable(owner()).transfer(balance);
+    }
+
+    // Project Crowdfunding Functions
+    function createProject(
+        string memory _name,
+        string memory _description,
+        uint256 _fundingGoal,
+        uint256 _durationInDays
+    ) external whenNotPaused returns (uint256) {
+        require(bytes(_name).length > 0, "Name required");
+        require(_fundingGoal > 0, "Goal must be > 0");
+        require(_durationInDays > 0 && _durationInDays <= 30, "Duration 1-30 days");
+        
+        uint256 projectId = nextProjectId++;
+        uint256 deadline = block.timestamp + (_durationInDays * 1 days);
+        
+        projects[projectId] = Project({
+            id: projectId,
+            name: _name,
+            description: _description,
+            creator: msg.sender,
+            fundingGoal: _fundingGoal * 10**18,
+            currentFunding: 0,
+            deadline: deadline,
+            completed: false,
+            exists: true
+        });
+        
+        emit ProjectCreated(projectId, _name, msg.sender);
+        return projectId;
+    }
+    
+    function contributeToProject(uint256 _projectId, uint256 _amount) 
+        external 
+        whenNotPaused 
+        nonReentrant
+        projectExists(_projectId) 
+    {
+        Project storage project = projects[_projectId];
+        require(block.timestamp < project.deadline, "Project deadline passed");
+        require(!project.completed, "Project already completed");
+        require(_amount >= MIN_CONTRIBUTION, "Below minimum contribution");
+        require(balanceOf(msg.sender) >= _amount, "Insufficient balance");
+        
+        // Transfer tokens from contributor to contract
+        _transfer(msg.sender, address(this), _amount);
+        
+        // Update project funding
+        project.currentFunding += _amount;
+        
+        // Record contribution
+        contributions[_projectId][msg.sender] = Contribution({
+            amount: contributions[_projectId][msg.sender].amount + _amount,
+            timestamp: block.timestamp,
+            refunded: false
+        });
+        
+        emit ContributionMade(_projectId, msg.sender, _amount);
+        
+        // Check if funding goal reached
+        if (project.currentFunding >= project.fundingGoal) {
+            project.completed = true;
+            emit ProjectFunded(_projectId, project.currentFunding);
+        }
+    }
+    
+    function claimRefund(uint256 _projectId) 
+        external 
+        nonReentrant
+        projectExists(_projectId) 
+    {
+        Project storage project = projects[_projectId];
+        Contribution storage contribution = contributions[_projectId][msg.sender];
+        
+        require(block.timestamp > project.deadline, "Project still active");
+        require(project.currentFunding < project.fundingGoal, "Project was funded");
+        require(contribution.amount > 0, "No contribution found");
+        require(!contribution.refunded, "Already refunded");
+        
+        uint256 refundAmount = contribution.amount;
+        contribution.refunded = true;
+        
+        // Transfer tokens back to contributor
+        _transfer(address(this), msg.sender, refundAmount);
+    }
+    
+    function releaseFunds(uint256 _projectId) 
+        external 
+        projectExists(_projectId) 
+    {
+        Project storage project = projects[_projectId];
+        require(msg.sender == project.creator, "Only creator can release");
+        require(project.currentFunding >= project.fundingGoal, "Funding goal not met");
+        require(!project.completed, "Already completed");
+        
+        project.completed = true;
+        
+        // Transfer all project funds to creator
+        uint256 projectBalance = project.currentFunding;
+        _transfer(address(this), project.creator, projectBalance);
+    }
+
+    // Governance Functions
+    function createProposal(
+        string memory _title,
+        string memory _description,
+        uint256 _votingPeriod
+    ) external onlyWhitelisted returns (uint256) {
+        require(bytes(_title).length > 0, "Title required");
+        require(_votingPeriod > 0 && _votingPeriod <= 7 days, "Invalid voting period");
+        
+        uint256 proposalId = nextProposalId++;
+        
+        proposals[proposalId] = Proposal({
+            id: proposalId,
+            title: _title,
+            description: _description,
+            proposer: msg.sender,
+            votesFor: 0,
+            votesAgainst: 0,
+            endTime: block.timestamp + _votingPeriod,
+            executed: false,
+            exists: true
+        });
+        
+        emit ProposalCreated(proposalId, _title, msg.sender);
+        return proposalId;
+    }
+    
+    function vote(uint256 _proposalId, bool _support) 
+        external 
+        proposalExists(_proposalId) 
+    {
+        Proposal storage proposal = proposals[_proposalId];
+        require(block.timestamp < proposal.endTime, "Voting ended");
+        require(!hasVoted[_proposalId][msg.sender], "Already voted");
+        require(balanceOf(msg.sender) > 0, "Must hold tokens to vote");
+        
+        uint256 votingPower = balanceOf(msg.sender);
+        hasVoted[_proposalId][msg.sender] = true;
+        
+        if (_support) {
+            proposal.votesFor += votingPower;
+        } else {
+            proposal.votesAgainst += votingPower;
+        }
+        
+        emit VoteCast(_proposalId, msg.sender, _support, votingPower);
+    }
+    
+    function executeProposal(uint256 _proposalId) external proposalExists(_proposalId) {
+        Proposal storage proposal = proposals[_proposalId];
+        require(block.timestamp >= proposal.endTime, "Voting still active");
+        require(!proposal.executed, "Already executed");
+        require(proposal.votesFor > proposal.votesAgainst, "Proposal failed");
+        
+        proposal.executed = true;
+        emit ProposalExecuted(_proposalId);
+        
+        // Here you would implement the actual proposal execution logic
+        // This could be calling another contract, transferring funds, etc.
+    }
+
+    // Staking Functions
+    function stake(uint256 _amount, uint256 _lockDays) external whenNotPaused {
+        require(_amount > 0, "Amount must be > 0");
+        require(_lockDays >= 7 && _lockDays <= 365, "Lock 7-365 days");
+        require(balanceOf(msg.sender) >= _amount, "Insufficient balance");
+        
+        uint256 lockUntil = block.timestamp + (_lockDays * 1 days);
+        
+        // Transfer tokens to staking contract
+        _transfer(msg.sender, address(this), _amount);
+        
+        stakes[msg.sender] = Stake({
+            amount: stakes[msg.sender].amount + _amount,
+            lockUntil: lockUntil,
+            rewards: 0
+        });
+        
+        totalStaked += _amount;
+        
+        emit Staked(msg.sender, _amount, lockUntil);
+    }
+    
+    function unstake() external nonReentrant {
+        Stake storage userStake = stakes[msg.sender];
+        require(userStake.amount > 0, "No stake found");
+        require(block.timestamp >= userStake.lockUntil, "Tokens still locked");
+        
+        uint256 stakeAmount = userStake.amount;
+        uint256 rewardAmount = calculateReward(msg.sender);
+        
+        userStake.amount = 0;
+        userStake.rewards = 0;
+        totalStaked -= stakeAmount;
+        
+        // Transfer stake + rewards back to user
+        _transfer(address(this), msg.sender, stakeAmount + rewardAmount);
+        
+        emit Unstaked(msg.sender, stakeAmount, rewardAmount);
+    }
+    
+    function calculateReward(address _user) public view returns (uint256) {
+        Stake memory userStake = stakes[_user];
+        if (userStake.amount == 0) return 0;
+        
+        uint256 lockDuration = userStake.lockUntil - block.timestamp;
+        uint256 reward = (userStake.amount * rewardRate * lockDuration) / (365 days * 10000);
+        return reward;
+    }
+
+    // Admin Functions
+    function addToWhitelist(address _user) external onlyOwner {
+        whitelisted[_user] = true;
+        emit WhitelistUpdated(_user, true);
+    }
+    
+    function removeFromWhitelist(address _user) external onlyOwner {
+        whitelisted[_user] = false;
+        emit WhitelistUpdated(_user, false);
+    }
+    
+    function setRewardRate(uint256 _newRate) external onlyOwner {
+        require(_newRate <= 1000, "Rate too high"); // Max 10%
+        rewardRate = _newRate;
+    }
+    
+    function pause() external onlyOwner {
+        _pause();
+    }
+    
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    // View Functions
+    function getProjectDetails(uint256 _projectId) 
+        external 
+        view 
+        projectExists(_projectId) 
+        returns (Project memory) 
+    {
+        return projects[_projectId];
+    }
+    
+    function getUserContribution(uint256 _projectId, address _user) 
+        external 
+        view 
+        returns (Contribution memory) 
+    {
+        return contributions[_projectId][_user];
+    }
+    
+    function getProposalDetails(uint256 _proposalId) 
+        external 
+        view 
+        proposalExists(_proposalId) 
+        returns (Proposal memory) 
+    {
+        return proposals[_proposalId];
+    }
+    
+    function getStakeInfo(address _user) external view returns (Stake memory) {
+        return stakes[_user];
+    }
+    
+    function getVotingPower(address _user) external view returns (uint256) {
+        return balanceOf(_user);
+    }
+}

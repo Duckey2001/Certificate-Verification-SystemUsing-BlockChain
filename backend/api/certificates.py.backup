@@ -1,0 +1,809 @@
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from sqlalchemy.orm import Session
+from typing import List, Dict, Any, Optional
+import os
+import shutil
+import uuid
+from datetime import datetime
+
+from models import Certificate, User, VerificationRequest, AuditEvent, Payment
+from schemas import CertificateResponse
+from utils.certificate_processor import (
+    CertificateProcessor,
+    OCRDependencyError,
+    NonLGCSECertificateError,
+)
+from utils.blockchain_service import BlockchainService
+from database import get_db
+from auth import get_current_user
+
+router = APIRouter(prefix="/certificates", tags=["certificates"])
+
+# ===== DEBUG ENDPOINTS =====
+@router.get("/debug")
+def debug_certificates(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Debug endpoint to check certificate data"""
+    from database import engine
+    from sqlalchemy import text
+    
+    try:
+        # Try a raw SQL query to bypass any ORM issues
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT COUNT(*) FROM certificates"))
+            count = result.scalar()
+            
+            certs = conn.execute(
+                text("SELECT id, certificate_hash, student_name, student_surname, student_id FROM certificates LIMIT 5")
+            ).fetchall()
+            
+            certificates = [
+                {
+                    "id": row[0],
+                    "certificate_hash": row[1],
+                    "student_name": f"{row[2]} {row[3]}",
+                    "student_id": row[4]
+                }
+                for row in certs
+            ]
+            
+            return {
+                "total_count": count,
+                "certificates": certificates,
+                "message": "Using raw SQL query"
+            }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": "Error accessing certificates table"
+        }
+
+@router.get("/debug-search")
+def debug_search(
+    q: Optional[str] = Query(None, description="Search term"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Debug version of search to see what's happening"""
+    from database import engine
+    from sqlalchemy import text
+    
+    try:
+        # Try raw SQL search
+        with engine.connect() as conn:
+            if q:
+                like = f"%{q}%"
+                result = conn.execute(
+                    text("""
+                        SELECT id, certificate_hash, student_name, student_surname, student_id 
+                        FROM certificates 
+                        WHERE student_name ILIKE :like 
+                           OR student_surname ILIKE :like 
+                           OR student_id ILIKE :like
+                           OR certificate_hash ILIKE :like
+                    """),
+                    {"like": like}
+                ).fetchall()
+                
+                certificates = [
+                    {
+                        "id": row[0],
+                        "certificate_hash": row[1],
+                        "student_name": f"{row[2]} {row[3]}",
+                        "student_id": row[4]
+                    }
+                    for row in result
+                ]
+                
+                return {
+                    "search_term": q,
+                    "results_count": len(certificates),
+                    "certificates": certificates,
+                    "message": "Using raw SQL search"
+                }
+            else:
+                # Return all certificates if no search term
+                result = conn.execute(
+                    text("SELECT id, certificate_hash, student_name, student_surname, student_id FROM certificates LIMIT 100")
+                ).fetchall()
+                
+                certificates = [
+                    {
+                        "id": row[0],
+                        "certificate_hash": row[1],
+                        "student_name": f"{row[2]} {row[3]}",
+                        "student_id": row[4]
+                    }
+                    for row in result
+                ]
+                
+                return {
+                    "search_term": q,
+                    "results_count": len(certificates),
+                    "certificates": certificates,
+                    "message": "All certificates (no search term)"
+                }
+    except Exception as e:
+        return {"error": str(e), "message": "Error in debug search"}
+
+@router.get("/debug-search-raw")
+def debug_search_raw(
+    q: Optional[str] = Query(None, description="Search term"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Debug search that returns raw ORM results"""
+    try:
+        query = db.query(Certificate)
+        
+        if q:
+            like = f"%{q}%"
+            query = query.filter(
+                (Certificate.certificate_hash.ilike(like)) |
+                (Certificate.student_id.ilike(like)) |
+                ((Certificate.student_name + ' ' + Certificate.student_surname).ilike(like))
+            )
+        
+        results = query.limit(100).all()
+        
+        # Return raw data without any serialization
+        return {
+            "search_term": q,
+            "count": len(results),
+            "raw_results": [
+                {
+                    "id": r.id,
+                    "certificate_hash": r.certificate_hash,
+                    "student_name": r.student_name,
+                    "student_surname": r.student_surname,
+                    "student_id": r.student_id,
+                    "examination_year": r.examination_year,
+                }
+                for r in results
+            ]
+        }
+    except Exception as e:
+        return {"error": str(e), "trace": str(e.__traceback__)}
+# ==========================
+
+def _allowed_certificate_extensions() -> set[str]:
+    return {'.pdf', '.jpg', '.jpeg', '.png', '.tiff', '.bmp'}
+
+def _save_upload_to_disk(upload: UploadFile, upload_dir: str) -> tuple[str, str]:
+    os.makedirs(upload_dir, exist_ok=True)
+    file_ext = os.path.splitext(upload.filename)[1].lower()
+    unique_filename = f"{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join(upload_dir, unique_filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(upload.file, buffer)
+    return file_path, file_ext
+
+def _create_certificate_from_extracted(
+    *,
+    db: Session,
+    current_user: User,
+    file_path: str,
+    certificate_data: Dict[str, Any],
+) -> Certificate:
+    # Parse student name into first name and surname
+    student_name = certificate_data.get("student_name", "")
+    name_parts = student_name.split()
+    first_name = name_parts[0] if name_parts else ""
+    surname = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+
+    # Parse issue year
+    issue_date = certificate_data.get("date_of_issue", "")
+    year = 2023  # default
+    if issue_date:
+        import re
+        year_match = re.search(r'\b(20\d{2})\b', issue_date)
+        if year_match:
+            year = int(year_match.group(1))
+
+    certificate = Certificate(
+        certificate_hash=certificate_data["certificate_hash"],
+        student_id=certificate_data.get("student_number", ""),
+        student_name=first_name,
+        student_surname=surname,
+        examination_year=year,
+        subjects=certificate_data.get("grades", {}),
+        credits=certificate_data.get("subjects_reported", 0) * 5,
+        issue_date=issue_date,
+        issuer_id=current_user.id,
+        original_image_path=file_path,
+        extracted_data=certificate_data,
+        status="verified",
+        created_at=datetime.now(),
+        updated_at=datetime.now()
+    )
+
+    db.add(certificate)
+    db.commit()
+    db.refresh(certificate)
+    return certificate
+
+@router.post("/upload", response_model=CertificateResponse)
+async def upload_certificate(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload and process a certificate (PDF or image)"""
+    if current_user.role != "issuer":
+        raise HTTPException(
+            status_code=403,
+            detail="Only issuers can upload certificates"
+        )
+    
+    # Validate file type
+    allowed_extensions = _allowed_certificate_extensions()
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
+        )
+    
+    upload_dir = "uploads/certificates"
+    file_path = None
+
+    try:
+        file_path, _ = _save_upload_to_disk(file, upload_dir)
+
+        try:
+            processor = CertificateProcessor()
+        except OCRDependencyError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{e}. {e.hint}" if e.hint else str(e),
+            )
+
+        # Process certificate
+        certificate_data = processor.process_certificate_file(file_path)
+        
+        # Check if certificate already exists
+        existing_cert = db.query(Certificate).filter(
+            Certificate.certificate_hash == certificate_data["certificate_hash"]
+        ).first()
+        
+        if existing_cert:
+            # Clean up the uploaded file
+            os.remove(file_path)
+            raise HTTPException(
+                status_code=400,
+                detail="Certificate already exists in the system"
+            )
+        
+        # Store hash on blockchain
+        blockchain_service = BlockchainService()
+        blockchain_result = blockchain_service.store_hash_on_blockchain(certificate_data)
+        
+        if not blockchain_result.get("success"):
+            os.remove(file_path)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to store on blockchain: {blockchain_result.get('error')}"
+            )
+        
+        certificate = _create_certificate_from_extracted(
+            db=db,
+            current_user=current_user,
+            file_path=file_path,
+            certificate_data=certificate_data,
+        )
+
+        # Persist blockchain metadata
+        certificate.blockchain_tx_id = blockchain_result.get("transaction_id")
+        certificate.blockchain_network = blockchain_result.get("network")
+        certificate.blockchain_block_number = blockchain_result.get("block_number")
+        db.commit()
+
+        db.add(
+            AuditEvent(
+                event_type="certificate_uploaded",
+                actor_user_id=current_user.id,
+                actor_role=current_user.role,
+                certificate_hash=certificate.certificate_hash,
+                payload={
+                    "tx_id": certificate.blockchain_tx_id,
+                    "network": certificate.blockchain_network,
+                },
+            )
+        )
+        db.commit()
+        return certificate
+
+    except NonLGCSECertificateError as e:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+    except OCRDependencyError as e:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(
+            status_code=400,
+            detail=f"{e}. {e.hint}" if e.hint else str(e),
+        )
+    except Exception as e:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/upload-bulk")
+async def upload_certificates_bulk(
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Bulk upload and process certificates (PDF or image).
+
+    Returns per-file results; one bad file won't fail the whole batch.
+    """
+    if current_user.role != "issuer":
+        raise HTTPException(status_code=403, detail="Only issuers can upload certificates")
+
+    allowed_extensions = _allowed_certificate_extensions()
+    upload_dir = "uploads/certificates"
+
+    try:
+        processor = CertificateProcessor()
+    except OCRDependencyError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{e}. {e.hint}" if e.hint else str(e),
+        )
+
+    blockchain_service = BlockchainService()
+    results: List[Dict[str, Any]] = []
+
+    for f in files:
+        file_path = None
+        try:
+            file_ext = os.path.splitext(f.filename)[1].lower()
+            if file_ext not in allowed_extensions:
+                results.append({
+                    "filename": f.filename,
+                    "success": False,
+                    "error": f"Unsupported file type: {file_ext}",
+                    "failure_reason": "Unsupported file type",
+                })
+                continue
+
+            file_path, _ = _save_upload_to_disk(f, upload_dir)
+            certificate_data = processor.process_certificate_file(file_path)
+
+            existing_cert = db.query(Certificate).filter(
+                Certificate.certificate_hash == certificate_data["certificate_hash"]
+            ).first()
+            if existing_cert:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                results.append({
+                    "filename": f.filename,
+                    "success": False,
+                    "error": "Certificate already exists",
+                    "failure_reason": "Duplicate certificate",
+                    "certificate_hash": certificate_data["certificate_hash"],
+                })
+                continue
+
+            blockchain_result = blockchain_service.store_hash_on_blockchain(certificate_data)
+            if not blockchain_result.get("success"):
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                results.append({
+                    "filename": f.filename,
+                    "success": False,
+                    "error": f"Blockchain store failed: {blockchain_result.get('error')}",
+                    "failure_reason": "Blockchain store failed",
+                })
+                continue
+
+            cert = _create_certificate_from_extracted(
+                db=db,
+                current_user=current_user,
+                file_path=file_path,
+                certificate_data=certificate_data,
+            )
+
+            cert.blockchain_tx_id = blockchain_result.get("transaction_id")
+            cert.blockchain_network = blockchain_result.get("network")
+            cert.blockchain_block_number = blockchain_result.get("block_number")
+            db.commit()
+
+            db.add(
+                AuditEvent(
+                    event_type="certificate_uploaded",
+                    actor_user_id=current_user.id,
+                    actor_role=current_user.role,
+                    certificate_hash=cert.certificate_hash,
+                    payload={
+                        "tx_id": cert.blockchain_tx_id,
+                        "network": cert.blockchain_network,
+                    },
+                )
+            )
+            db.commit()
+
+            results.append({
+                "filename": f.filename,
+                "success": True,
+                "confidence": certificate_data.get("extraction_confidence", 0.0),
+                "certificate_id": cert.id,
+                "certificate_hash": cert.certificate_hash,
+                "transaction_id": blockchain_result.get("transaction_id"),
+                "extracted": {
+                    "student_name": certificate_data.get("student_name", ""),
+                    "student_number": certificate_data.get("student_number", ""),
+                    "institution": certificate_data.get("institution", ""),
+                    "date_of_issue": certificate_data.get("date_of_issue", ""),
+                },
+            })
+
+        except OCRDependencyError as e:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+            results.append({
+                "filename": getattr(f, "filename", "unknown"),
+                "success": False,
+                "error": str(e),
+                "failure_reason": f"OCR dependency missing: {e}",
+            })
+        except NonLGCSECertificateError as e:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+            results.append({
+                "filename": getattr(f, "filename", "unknown"),
+                "success": False,
+                "error": str(e),
+                "failure_reason": "Not an LGCSE certificate",
+            })
+        except Exception as e:
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+            results.append({
+                "filename": getattr(f, "filename", "unknown"),
+                "success": False,
+                "error": str(e),
+                "failure_reason": str(e),
+            })
+
+    return {
+        "count": len(files),
+        "success_count": sum(1 for r in results if r.get("success")),
+        "failure_count": sum(1 for r in results if not r.get("success")),
+        "results": results
+    }
+
+@router.get("/{certificate_hash}", response_model=CertificateResponse)
+def get_certificate(
+    certificate_hash: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get certificate by hash"""
+    certificate = db.query(Certificate).filter(
+        Certificate.certificate_hash == certificate_hash
+    ).first()
+    
+    if not certificate:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    return certificate
+
+@router.get("/", response_model=List[CertificateResponse])
+def list_certificates(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """List all certificates (with pagination)"""
+    certificates = db.query(Certificate).offset(skip).limit(limit).all()
+    return certificates
+
+
+@router.get("/search")
+def search_certificates(
+    q: Optional[str] = Query(None, description="Free text search on student name, id or hash"),
+    student_id: Optional[str] = None,
+    student_name: Optional[str] = None,
+    certificate_hash: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Search certificates by hash, student id or name.
+    Used by some frontend components via certificateApi.searchCertificates.
+    """
+    try:
+        query = db.query(Certificate)
+
+        if certificate_hash:
+            query = query.filter(Certificate.certificate_hash == certificate_hash)
+        if student_id:
+            query = query.filter(Certificate.student_id.ilike(f"%{student_id}%"))
+        if student_name:
+            query = query.filter(
+                (Certificate.student_name + ' ' + Certificate.student_surname).ilike(f"%{student_name}%")
+            )
+        if q:
+            like = f"%{q}%"
+            query = query.filter(
+                (Certificate.certificate_hash.ilike(like)) |
+                (Certificate.student_id.ilike(like)) |
+                ((Certificate.student_name + ' ' + Certificate.student_surname).ilike(like))
+            )
+
+        results = query.order_by(Certificate.id.desc()).limit(100).all()
+        
+        if not results:
+            return []
+        
+        return [
+            {
+                "id": c.id,
+                "certificate_hash": c.certificate_hash,
+                "student_id": c.student_id,
+                "student_name": f"{c.student_name} {c.student_surname}",
+                "examination_year": c.examination_year,
+                "subjects": c.subjects,
+                "credits": c.credits,
+                "issue_date": c.issue_date,
+                "status": c.status,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in results
+        ]
+    except Exception as e:
+        # Log the error and return empty list instead of crashing
+        print(f"Search error: {str(e)}")
+        return []
+
+# ===== NEW SIMPLE SEARCH ENDPOINT =====
+@router.get("/simple-search")
+def simple_search(
+    q: str = Query(..., description="Search term"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Simple search that returns raw data - guaranteed to work"""
+    try:
+        from sqlalchemy import or_
+        
+        like = f"%{q}%"
+        results = db.query(Certificate).filter(
+            or_(
+                Certificate.certificate_hash.ilike(like),
+                Certificate.student_id.ilike(like),
+                Certificate.student_name.ilike(like),
+                Certificate.student_surname.ilike(like)
+            )
+        ).limit(100).all()
+        
+        return [
+            {
+                "id": r.id,
+                "certificate_hash": r.certificate_hash,
+                "student_name": f"{r.student_name} {r.student_surname}",
+                "student_id": r.student_id,
+                "examination_year": r.examination_year,
+                "subjects": r.subjects,
+                "credits": r.credits,
+                "issue_date": r.issue_date,
+                "status": r.status,
+            }
+            for r in results
+        ]
+    except Exception as e:
+        return {"error": str(e)}
+# ======================================
+
+@router.post("/verify")
+async def verify_certificate(
+    certificate_hash: str = Form(...),
+    verification_file: UploadFile = File(...),
+    payment_method: str = Form("mpesa"),
+    payment_digits: str = Form(...),
+    payment_reference: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Verify a certificate by comparing hash"""
+    if current_user.role not in {"verifier", "issuer", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only verifiers/issuers can verify certificates"
+        )
+    
+    # Validate payment method (for now informational, but required by UI)
+    allowed_methods = {"mpesa", "ecocash", "bank"}
+    if payment_method not in allowed_methods:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Payment method must be one of: {', '.join(sorted(allowed_methods))}"
+        )
+
+    # Validate payment digits
+    if len(payment_digits) != 6 or not payment_digits.isdigit():
+        raise HTTPException(
+            status_code=400,
+            detail="Payment digits must be 6 numbers"
+        )
+    
+    # Find certificate in database
+    certificate = db.query(Certificate).filter(
+        Certificate.certificate_hash == certificate_hash
+    ).first()
+    
+    if not certificate:
+        raise HTTPException(status_code=404, detail="Certificate not found")
+    
+    # Save verification file
+    upload_dir = "uploads/verifications"
+    os.makedirs(upload_dir, exist_ok=True)
+    unique_filename = f"{uuid.uuid4()}{os.path.splitext(verification_file.filename)[1]}"
+    file_path = os.path.join(upload_dir, unique_filename)
+    
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(verification_file.file, buffer)
+
+        try:
+            processor = CertificateProcessor()
+        except OCRDependencyError as e:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            raise HTTPException(
+                status_code=400,
+                detail=f"{e}. {e.hint}" if e.hint else str(e),
+            )
+
+        # Process verification file
+        verification_data = processor.process_certificate_file(file_path)
+        computed_hash = verification_data["certificate_hash"]
+        
+        # Verify against blockchain
+        blockchain_service = BlockchainService()
+        blockchain_verification = blockchain_service.verify_hash_on_blockchain(certificate_hash)
+        
+        # Check if hashes match
+        hash_match = computed_hash == certificate_hash
+
+        # Notify network if tampering suspected
+        if not hash_match:
+            try:
+                blockchain_service.report_tamper(certificate_hash, computed_hash)
+            except Exception:
+                pass
+        
+        # Create verification record
+        verification = VerificationRequest(
+            certificate_hash=certificate_hash,
+            verifier_id=current_user.id,
+            uploaded_image_path=file_path,
+            extracted_info=verification_data,
+            computed_hash=computed_hash,
+            blockchain_match=blockchain_verification.get("verified", False),
+            payment_method=payment_method,
+            payment_digits=payment_digits,
+            payment_status="confirmed",
+            payment_reference=payment_reference or None,
+            verification_fee=5.00,
+            result="verified" if hash_match else "failed",
+            verification_date=datetime.now()
+        )
+        
+        db.add(verification)
+        db.commit()
+        db.refresh(verification)
+
+        # Persist a payment record (capture-only for now)
+        payment = Payment(
+            verification_request_id=verification.id,
+            payer_user_id=current_user.id,
+            method=payment_method,
+            digits=payment_digits,
+            reference=payment_reference or None,
+            amount=5.00,
+            status="confirmed",
+            confirmed_at=datetime.utcnow(),
+        )
+        db.add(payment)
+        db.commit()
+
+        db.add(
+            AuditEvent(
+                event_type="certificate_verified" if hash_match else "certificate_tampered",
+                actor_user_id=current_user.id,
+                actor_role=current_user.role,
+                certificate_hash=certificate_hash,
+                verification_request_id=verification.id,
+                payload={
+                    "hash_match": hash_match,
+                    "blockchain_verified": blockchain_verification.get("verified", False),
+                },
+            )
+        )
+        db.commit()
+        
+        return {
+            "match": hash_match,
+            "verified_by": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "role": current_user.role,
+            },
+            "certificate_data": {
+                "student_name": f"{certificate.student_name} {certificate.student_surname}",
+                "student_id": certificate.student_id,
+                "institution": certificate.extracted_data.get("institution", "") if certificate.extracted_data else "",
+                "issue_date": certificate.issue_date,
+                "subjects": certificate.subjects
+            },
+            "blockchain_verified": blockchain_verification.get("verified", False),
+            "payment": {
+                "method": payment_method,
+                "digits": payment_digits,
+                "reference": payment_reference or None,
+                "status": "confirmed",
+                "payment_id": payment.id,
+            },
+            "verification_id": verification.id
+        }
+
+    except NonLGCSECertificateError as e:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+@router.get("/verify/result/{verification_id}")
+def get_verification_result(
+    verification_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return a verification result by id.
+    Matches the shape expected by certificateApi.getVerificationResult.
+    """
+    v = db.query(VerificationRequest).filter(VerificationRequest.id == verification_id).first()
+    if not v:
+        raise HTTPException(status_code=404, detail="Verification not found")
+
+    cert = None
+    if v.certificate_hash:
+        cert = (
+            db.query(Certificate)
+            .filter(Certificate.certificate_hash == v.certificate_hash)
+            .first()
+        )
+
+    return {
+        "id": v.id,
+        "certificate_hash": v.certificate_hash,
+        "result": v.result,
+        "blockchain_match": v.blockchain_match,
+        "payment_method": v.payment_method,
+        "payment_digits": v.payment_digits,
+        "payment_status": v.payment_status,
+        "verification_fee": v.verification_fee,
+        "verification_date": v.verification_date.isoformat() if v.verification_date else None,
+        "certificate_data": {
+            "student_name": f"{cert.student_name} {cert.student_surname}" if cert else "",
+            "student_id": cert.student_id if cert else "",
+            "institution": cert.extracted_data.get("institution", "") if (cert and cert.extracted_data) else "",
+            "issue_date": cert.issue_date if cert else "",
+        } if cert else None,
+    }
