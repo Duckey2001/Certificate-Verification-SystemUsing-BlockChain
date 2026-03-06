@@ -30,6 +30,7 @@ class User(Base):
     verification_requests = relationship("VerificationRequest", back_populates="verifier")
     invitations_sent = relationship("Invitation", foreign_keys="[Invitation.inviter_id]", back_populates="inviter")
     badges = relationship("Badge", back_populates="user")
+    verification_logs = relationship("VerificationLog", back_populates="verifier")
 
 class Certificate(Base):
     __tablename__ = "certificates"
@@ -112,6 +113,26 @@ class Payment(Base):
     
     # Error handling
     error_message = Column(Text, nullable=True)
+    
+    # Relationships
+    callbacks = relationship("PaymentCallback", back_populates="payment")
+
+
+class PaymentCallback(Base):
+    """
+    Payment callback record for M-Pesa and other payment providers.
+    """
+    __tablename__ = "payment_callbacks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=False, index=True)
+    provider = Column(String(50), nullable=False)  # mpesa, ecocash, bank
+    callback_data = Column(JSON, nullable=False)
+    processed = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    payment = relationship("Payment", back_populates="callbacks")
 
 
 class AuditEvent(Base):
@@ -196,3 +217,23 @@ class Institution(Base):
     role = Column(String(50), nullable=False)  # ISSUER or VERIFIER
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class VerificationLog(Base):
+    """
+    Verification log for tracking certificate verification attempts and results.
+    """
+    __tablename__ = "verification_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    certificate_hash = Column(String(64), nullable=False, index=True)
+    verifier_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    verification_method = Column(String(50), nullable=False)  # hash, file, qr_code
+    verification_result = Column(String(20), nullable=False)  # valid, invalid, failed
+    verification_details = Column(JSON, nullable=True)
+    ip_address = Column(String(100), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    verifier = relationship("User", back_populates="verification_logs")

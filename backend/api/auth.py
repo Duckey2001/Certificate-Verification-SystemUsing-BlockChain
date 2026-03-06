@@ -1,4 +1,6 @@
+from models import User, Session as DbSession, LoginActivity, Institution
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -7,10 +9,11 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 import os
+import traceback
+import uuid  # Added for generating unique session IDs
 from dotenv import load_dotenv
 
 from database import get_db
-from models import User, Session as DbSession, LoginActivity, Institution
 
 load_dotenv()
 
@@ -29,8 +32,8 @@ class UserCreate(BaseModel):
     username: str
     email: EmailStr
     password: str
+    role: str = "issuer"
     institution_code: Optional[str] = None
-    role: str = "user"
 
 class UserLogin(BaseModel):
     username: str
@@ -133,8 +136,8 @@ async def register(
             username=user_data.username,
             email=user_data.email,
             password_hash=hashed_password,
-            institution_code=user_data.institution_code,
             role=user_data.role,
+            institution_code=user_data.institution_code,
             is_active=True,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
@@ -146,13 +149,14 @@ async def register(
         
         # Create access token
         access_token = create_access_token(
-            data={"sub": user.id, "username": user.username, "role": user.role}
+            data={"sub": str(user.id), "username": user.username, "role": user.role}
         )
         
-        # Create session
+        # Create session with generated UUID
         session = DbSession(
+            id=str(uuid.uuid4()),  # Generate unique string ID
             session_token=access_token,
-            user_id=user.id,
+            user_id=str(user.id),  # Convert to string
             expires=datetime.utcnow() + timedelta(days=7),
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
@@ -162,7 +166,6 @@ async def register(
         # Log login activity
         login_activity = LoginActivity(
             user_id=user.id,
-            institution_code=user.institution_code,
             ip_address=request.client.host,
             user_agent=request.headers.get("user-agent"),
             status="success",
@@ -177,7 +180,7 @@ async def register(
             "access_token": access_token,
             "token_type": "bearer",
             "user": {
-                "id": user.id,
+                "id": str(user.id),
                 "username": user.username,
                 "email": user.email,
                 "role": user.role,
@@ -193,6 +196,7 @@ async def register(
         raise
     except Exception as e:
         print(f"Registration error: {str(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail="Failed to register user")
 
 @router.post("/login", response_model=TokenResponse)
@@ -201,19 +205,27 @@ async def login(
     login_data: UserLogin,
     db: Session = Depends(get_db)
 ):
-    """Login user"""
+    """Login user - accepts username OR email in the username field"""
     try:
-        # Find user
-        user = db.query(User).filter(User.username == login_data.username).first()
+        print(f"🔍 Login attempt for identifier: {login_data.username}")
         
+        # Try to find user by username first
+        user = db.query(User).filter(User.username == login_data.username).first()
+        print(f"🔍 User found by username: {user is not None}")
+        
+        # If not found by username, try by email
         if not user:
-            # Log failed attempt
+            user = db.query(User).filter(User.email == login_data.username).first()
+            print(f"🔍 User found by email: {user is not None}")
+        
+        # If still not found, log failed attempt and return error
+        if not user:
+            print(f"❌ User not found with identifier: {login_data.username}")
             login_activity = LoginActivity(
-                user_id="unknown",
+                user_id=None,
                 ip_address=request.client.host,
                 user_agent=request.headers.get("user-agent"),
                 status="failed",
-                failure_reason="User not found",
                 login_method="password",
                 created_at=datetime.utcnow()
             )
@@ -221,15 +233,16 @@ async def login(
             db.commit()
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
-        # Check if user is active
-        if not user.is_active:
+        print(f"✅ User found: {user.username} (ID: {user.id})")
+        
+        # Check if user is active (if the column exists)
+        if hasattr(user, 'is_active') and not user.is_active:
+            print(f"❌ User inactive: {user.username}")
             login_activity = LoginActivity(
                 user_id=user.id,
-                institution_code=user.institution_code,
                 ip_address=request.client.host,
                 user_agent=request.headers.get("user-agent"),
                 status="failed",
-                failure_reason="Account deactivated",
                 login_method="password",
                 created_at=datetime.utcnow()
             )
@@ -238,14 +251,16 @@ async def login(
             raise HTTPException(status_code=403, detail="Account is deactivated")
         
         # Verify password
-        if not verify_password(login_data.password, user.password_hash):
+        password_valid = verify_password(login_data.password, user.password_hash)
+        print(f"🔑 Password valid: {password_valid}")
+        
+        if not password_valid:
+            print(f"❌ Invalid password for user: {user.username}")
             login_activity = LoginActivity(
                 user_id=user.id,
-                institution_code=user.institution_code,
                 ip_address=request.client.host,
                 user_agent=request.headers.get("user-agent"),
                 status="failed",
-                failure_reason="Invalid password",
                 login_method="password",
                 created_at=datetime.utcnow()
             )
@@ -253,19 +268,24 @@ async def login(
             db.commit()
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
-        # Update last login
-        user.last_login_at = datetime.utcnow()
+        # Update last login (if column exists)
+        if hasattr(user, 'last_login_at'):
+            user.last_login_at = datetime.utcnow()
         user.updated_at = datetime.utcnow()
         
         # Create access token
         access_token = create_access_token(
-            data={"sub": user.id, "username": user.username, "role": user.role}
+            data={"sub": str(user.id), "username": user.username, "role": user.role}
         )
+        print(f"✅ Access token created")
         
-        # Create session
+        # Create session with generated UUID
+        session_id = str(uuid.uuid4())
+        print(f"🔄 Creating session with ID: {session_id}")
         session = DbSession(
+            id=session_id,  # Generate unique string ID
             session_token=access_token,
-            user_id=user.id,
+            user_id=str(user.id),  # Convert to string
             expires=datetime.utcnow() + timedelta(days=7),
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
@@ -275,7 +295,6 @@ async def login(
         # Log successful login
         login_activity = LoginActivity(
             user_id=user.id,
-            institution_code=user.institution_code,
             ip_address=request.client.host,
             user_agent=request.headers.get("user-agent"),
             status="success",
@@ -284,11 +303,13 @@ async def login(
         )
         db.add(login_activity)
         
+        print("💾 Committing to database...")
         db.commit()
+        print(f"✅ Login successful for: {user.username}")
         
         # Get institution if any
         institution = None
-        if user.institution_code:
+        if hasattr(user, 'institution_code') and user.institution_code:
             institution = db.query(Institution).filter(
                 Institution.code == user.institution_code
             ).first()
@@ -297,7 +318,7 @@ async def login(
             "access_token": access_token,
             "token_type": "bearer",
             "user": {
-                "id": user.id,
+                "id": str(user.id),
                 "username": user.username,
                 "email": user.email,
                 "role": user.role,
@@ -312,7 +333,23 @@ async def login(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Login error: {str(e)}")
+        print(f"❌ Login error: {str(e)}")
+        print(f"Error type: {type(e)}")
+        print(f"Traceback: {traceback.format_exc()}")
+        # Log error without failure_reason
+        try:
+            login_activity = LoginActivity(
+                user_id=None,
+                ip_address=request.client.host,
+                user_agent=request.headers.get("user-agent"),
+                status="failed",
+                login_method="password",
+                created_at=datetime.utcnow()
+            )
+            db.add(login_activity)
+            db.commit()
+        except Exception as log_error:
+            print(f"Failed to log activity: {log_error}")
         raise HTTPException(status_code=500, detail="Failed to login")
 
 @router.post("/logout")
@@ -347,7 +384,7 @@ async def verify_token(
     return {
         "valid": True,
         "user": {
-            "id": current_user.id,
+            "id": str(current_user.id),
             "username": current_user.username,
             "email": current_user.email,
             "role": current_user.role,
@@ -372,7 +409,7 @@ async def get_current_user_info(
         ).first()
     
     return {
-        "id": current_user.id,
+        "id": str(current_user.id),
         "username": current_user.username,
         "email": current_user.email,
         "role": current_user.role,
@@ -381,8 +418,8 @@ async def get_current_user_info(
             "name": institution.name,
             "role": institution.role
         } if institution else None,
-        "is_active": current_user.is_active,
-        "last_login_at": current_user.last_login_at
+        "is_active": getattr(current_user, 'is_active', True),
+        "last_login_at": getattr(current_user, 'last_login_at', None)
     }
 
 @router.post("/token")
@@ -392,8 +429,10 @@ async def token_login(
     db: Session = Depends(get_db)
 ):
     """OAuth2 compatible token login"""
-    # Find user
+    # Find user by username or email
     user = db.query(User).filter(User.username == form_data.username).first()
+    if not user:
+        user = db.query(User).filter(User.email == form_data.username).first()
     
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
@@ -402,7 +441,7 @@ async def token_login(
             headers={"WWW-Authenticate": "Bearer"},
         )
     
-    if not user.is_active:
+    if getattr(user, 'is_active', True) is False:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Account is deactivated",
@@ -411,7 +450,7 @@ async def token_login(
     
     # Create access token
     access_token = create_access_token(
-        data={"sub": user.id, "username": user.username, "role": user.role}
+        data={"sub": str(user.id), "username": user.username, "role": user.role}
     )
     
     return {

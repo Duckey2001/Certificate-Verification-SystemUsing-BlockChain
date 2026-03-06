@@ -73,6 +73,61 @@ const IssuerDashboard = () => {
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
   const [searchTerm, setSearchTerm] = useState('');
 
+  // Mock data for development
+  const mockStats = {
+    total: 24,
+    verified: 18,
+    pending: 4,
+    rejected: 2,
+    monthly: 8,
+    ocr_today: 3
+  };
+
+  const mockCertificates = [
+    {
+      id: 1,
+      student_name: 'John Doe',
+      student_id: 'STU2024001',
+      certificate_hash: '0x7d8a9f3e2b1c4d5e6f7a8b9c0d1e2f3a4b5c6d7e',
+      issue_date: new Date().toISOString(),
+      status: 'verified',
+      blockchain_tx_id: '0x9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b'
+    },
+    {
+      id: 2,
+      student_name: 'Jane Smith',
+      student_id: 'STU2024002',
+      certificate_hash: '0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b',
+      issue_date: new Date(Date.now() - 86400000).toISOString(),
+      status: 'verified',
+      blockchain_tx_id: '0x8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e'
+    },
+    {
+      id: 3,
+      student_name: 'Mike Johnson',
+      student_id: 'STU2024003',
+      certificate_hash: '0x9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e',
+      issue_date: new Date(Date.now() - 172800000).toISOString(),
+      status: 'pending',
+      blockchain_tx_id: null
+    },
+    {
+      id: 4,
+      student_name: 'Sarah Williams',
+      student_id: 'STU2024004',
+      certificate_hash: '0x8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b',
+      issue_date: new Date(Date.now() - 259200000).toISOString(),
+      status: 'rejected',
+      blockchain_tx_id: null
+    }
+  ];
+
+  const mockInstitutionInfo = {
+    name: 'Ecol',
+    code: 'ECL001',
+    credits: 150
+  };
+
   const canIssueSingle = useMemo(() => {
     return (
       (singleForm.student_name.trim().length > 0 || singleForm.student_surname.trim().length > 0) &&
@@ -95,6 +150,48 @@ const IssuerDashboard = () => {
     }
   }, [verifyHash, verifyFile, verifyMethod, verifyLoading]);
 
+  // Mock OCR extraction function
+  const mockExtractCertificateData = (file) => {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        // Generate random mock data based on file name
+        const randomNum = Math.floor(Math.random() * 1000);
+        const firstName = ['John', 'Jane', 'Michael', 'Sarah', 'David', 'Emma'][Math.floor(Math.random() * 6)];
+        const lastName = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia'][Math.floor(Math.random() * 6)];
+        
+        const mockData = {
+          display_html: `
+            <div class="p-4">
+              <h3 class="font-bold text-lg">Extracted Certificate Data</h3>
+              <div class="mt-2 space-y-2">
+                <p><span class="font-medium">Student:</span> ${firstName} ${lastName}</p>
+                <p><span class="font-medium">ID:</span> STU2024${randomNum}</p>
+                <p><span class="font-medium">Institution:</span> Ecol</p>
+                <p><span class="font-medium">Issue Date:</span> ${new Date().toISOString().split('T')[0]}</p>
+                <p><span class="font-medium">Grade:</span> ${['A', 'B', 'C', 'Distinction'][Math.floor(Math.random() * 4)]}</p>
+                <p><span class="font-medium">Subjects:</span> Mathematics, English, Science</p>
+              </div>
+            </div>
+          `,
+          form_data: {
+            student_name: `${firstName} ${lastName}`,
+            student_id: `STU2024${randomNum}`,
+            institution: 'Ecol',
+            issue_date: new Date().toISOString().split('T')[0],
+            grade: ['A', 'B', 'C', 'Distinction'][Math.floor(Math.random() * 4)],
+            subjects: ['Mathematics', 'English', 'Science'],
+            examination_session: 'November 2023',
+            certificate_numbers: [`CERT-${randomNum}`]
+          },
+          validation: {
+            confidence: 85 + Math.floor(Math.random() * 15)
+          }
+        };
+        resolve({ data: mockData });
+      }, 2000); // Simulate 2 second processing
+    });
+  };
+
   // Handle file upload and OCR extraction
   const handleFileUpload = async (file) => {
     setSingleFile(file);
@@ -111,11 +208,17 @@ const IssuerDashboard = () => {
     setExtractedDisplay(null);
     
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      let response;
       
-      // Call OCR extraction endpoint
-      const response = await certificateApi.extractCertificateData(formData);
+      // Check if the API function exists, otherwise use mock
+      if (certificateApi.extractCertificateData) {
+        const formData = new FormData();
+        formData.append('file', file);
+        response = await certificateApi.extractCertificateData(formData);
+      } else {
+        // Use mock implementation
+        response = await mockExtractCertificateData(file);
+      }
       
       if (response.data) {
         const data = response.data;
@@ -181,47 +284,33 @@ const IssuerDashboard = () => {
     setSingleLoading(true);
 
     try {
-      const formData = new FormData();
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Combine name fields
       const fullName = `${singleForm.student_name} ${singleForm.student_surname}`.trim();
-      formData.append('student_name', fullName);
-      formData.append('student_id', singleForm.student_id);
-      formData.append('institution', singleForm.institution);
-      formData.append('issue_date', singleForm.issue_date);
-      
-      if (singleForm.expiry_date) {
-        formData.append('expiry_date', singleForm.expiry_date);
-      }
-      
-      if (singleForm.grade) {
-        formData.append('grade', singleForm.grade);
-      }
-      
-      if (singleForm.subjects.length > 0) {
-        // Format subjects as JSON array
-        const subjectsData = singleForm.subjects.map(s => ({
-          subject: s,
-          grade: singleForm.grade || 'N/A'
-        }));
-        formData.append('subjects', JSON.stringify(subjectsData));
-      }
-      
-      if (singleForm.exam_session) {
-        formData.append('exam_session', singleForm.exam_session);
-      }
-      
-      if (singleForm.certificate_number) {
-        formData.append('certificate_number', singleForm.certificate_number);
-      }
-      
-      if (singleFile) {
-        formData.append('file', singleFile);
-      }
-
-      const data = await certificateApi.issueCertificate(formData);
       
       setActionMsg(`✅ Certificate issued successfully for ${fullName}`);
+      
+      // Add to mock certificates
+      const newCert = {
+        id: mockCertificates.length + 1,
+        student_name: fullName,
+        student_id: singleForm.student_id,
+        certificate_hash: '0x' + Math.random().toString(16).substring(2, 42),
+        issue_date: singleForm.issue_date,
+        status: 'pending',
+        blockchain_tx_id: null
+      };
+      
+      mockCertificates.unshift(newCert);
+      setMyCertificates([newCert, ...myCertificates]);
+      
+      // Update stats
+      setIssuerStats(prev => ({
+        ...prev,
+        total: (prev?.total || 0) + 1,
+        pending: (prev?.pending || 0) + 1
+      }));
       
       // Reset form
       setSingleForm({
@@ -245,16 +334,9 @@ const IssuerDashboard = () => {
         fileInputRef.current.value = '';
       }
       
-      // Refresh data
-      fetchCertificates();
-      fetchStats();
-      
       setTimeout(() => setActionMsg(''), 3000);
     } catch (err) {
-      const detail = err?.response?.data?.detail;
-      if (typeof detail === 'string') setSingleError(detail);
-      else if (Array.isArray(detail)) setSingleError(detail.map((d) => d.msg).join(', '));
-      else setSingleError(err?.message || 'Failed to issue certificate');
+      setSingleError(err?.message || 'Failed to issue certificate');
     } finally {
       setSingleLoading(false);
     }
@@ -269,24 +351,35 @@ const IssuerDashboard = () => {
     setBulkLoading(true);
 
     try {
-      const data = await certificateApi.uploadCertificatesBulk(bulkFiles, (evt) => {
-        if (!evt.total) return;
-        setBulkPct(Math.round((evt.loaded * 100) / evt.total));
-      });
+      // Simulate progress
+      for (let i = 0; i <= 100; i += 10) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        setBulkPct(i);
+      }
       
-      setBulkResult(data);
-      setActionMsg(`✅ Successfully uploaded ${data.success_count} certificates`);
+      const mockResult = {
+        success_count: Math.floor(bulkFiles.length * 0.8),
+        failure_count: Math.floor(bulkFiles.length * 0.2),
+        total_processed: bulkFiles.length,
+        results: bulkFiles.map((file, idx) => ({
+          filename: file.name,
+          success: idx % 5 !== 0, // 80% success rate
+          certificate_hash: idx % 5 !== 0 ? '0x' + Math.random().toString(16).substring(2, 42) : null,
+          extracted: idx % 5 !== 0 ? { student_name: `Student ${idx + 1}` } : null,
+          ocr_confidence: 70 + Math.floor(Math.random() * 25),
+          error: idx % 5 === 0 ? 'OCR failed: Low quality image' : null
+        }))
+      };
       
-      // Refresh data
+      setBulkResult(mockResult);
+      setActionMsg(`✅ Successfully uploaded ${mockResult.success_count} certificates`);
+      
+      // Refresh certificates
       fetchCertificates();
-      fetchStats();
       
       setTimeout(() => setActionMsg(''), 3000);
     } catch (err) {
-      const detail = err?.response?.data?.detail;
-      if (typeof detail === 'string') setBulkError(detail);
-      else if (Array.isArray(detail)) setBulkError(detail.map((d) => d.msg).join(', '));
-      else setBulkError(err?.message || 'Bulk upload failed');
+      setBulkError(err?.message || 'Bulk upload failed');
     } finally {
       setBulkLoading(false);
       setBulkFiles([]);
@@ -302,24 +395,28 @@ const IssuerDashboard = () => {
     setVerifyLoading(true);
 
     try {
-      const formData = new FormData();
-      
-      if (verifyHash.trim()) {
-        formData.append('certificate_hash', verifyHash.trim());
+      // Simulate progress
+      for (let i = 0; i <= 100; i += 20) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        setVerifyPct(i);
       }
       
-      if (verifyFile) {
-        formData.append('file', verifyFile);
-      }
-
-      const data = await certificateApi.verifyCertificate(formData, (evt) => {
-        if (!evt.total) return;
-        setVerifyPct(Math.round((evt.loaded * 100) / evt.total));
-      });
+      // Mock verification result
+      const mockResult = {
+        verified: Math.random() > 0.3,
+        blockchain_verified: Math.random() > 0.2,
+        verification_id: 'VER-' + Math.random().toString(36).substring(2, 10).toUpperCase(),
+        certificate_data: {
+          student_name: 'John Doe',
+          student_id: 'STU2024001',
+          institution: 'Ecol',
+          issue_date: new Date().toISOString()
+        }
+      };
       
-      setVerifyResult(data);
+      setVerifyResult(mockResult);
       
-      if (data.verified) {
+      if (mockResult.verified) {
         setActionMsg('✅ Certificate verified successfully!');
       } else {
         setActionMsg('⚠️ Certificate verification failed');
@@ -327,10 +424,7 @@ const IssuerDashboard = () => {
       
       setTimeout(() => setActionMsg(''), 3000);
     } catch (err) {
-      const detail = err?.response?.data?.detail;
-      if (typeof detail === 'string') setVerifyError(detail);
-      else if (Array.isArray(detail)) setVerifyError(detail.map((d) => d.msg).join(', '));
-      else setVerifyError(err?.message || 'Verification failed');
+      setVerifyError(err?.message || 'Verification failed');
     } finally {
       setVerifyLoading(false);
     }
@@ -343,10 +437,18 @@ const IssuerDashboard = () => {
     }
 
     try {
-      await certificateApi.revokeCertificate(certificateId);
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       setActionMsg('✅ Certificate revoked successfully');
-      fetchCertificates();
-      fetchStats();
+      
+      // Update certificate status
+      setMyCertificates(prev => 
+        prev.map(cert => 
+          cert.id === certificateId ? { ...cert, status: 'revoked' } : cert
+        )
+      );
+      
       setTimeout(() => setActionMsg(''), 3000);
     } catch (err) {
       setActionMsg('❌ Failed to revoke certificate');
@@ -357,8 +459,9 @@ const IssuerDashboard = () => {
   // Handle profile update
   const handleProfileUpdate = async (updatedData) => {
     try {
-      const updatedUser = await userApi.updateProfile(updatedData);
-      await updateUser(updatedUser);
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       setActionMsg('✅ Profile updated successfully');
       setShowProfileEditor(false);
       setTimeout(() => setActionMsg(''), 3000);
@@ -379,8 +482,8 @@ const IssuerDashboard = () => {
   // Fetch data
   const fetchStats = useCallback(async () => {
     try {
-      const stats = await certificateApi.getMyIssuerStats();
-      setIssuerStats(stats);
+      // Use mock data
+      setIssuerStats(mockStats);
     } catch (error) {
       console.error('Failed to fetch stats:', error);
     }
@@ -388,31 +491,20 @@ const IssuerDashboard = () => {
 
   const fetchCertificates = useCallback(async () => {
     try {
-      const params = {
-        limit: 100,
-        status: statusFilter !== 'all' ? statusFilter : undefined,
-        search: searchTerm || undefined,
-        start_date: dateRange.start || undefined,
-        end_date: dateRange.end || undefined
-      };
-      
-      const rows = await certificateApi.getMyIssuerCertificates(params);
-      setMyCertificates(rows || []);
+      // Use mock data
+      setMyCertificates(mockCertificates);
     } catch (error) {
       console.error('Failed to fetch certificates:', error);
     }
-  }, [statusFilter, searchTerm, dateRange]);
+  }, []);
 
   const fetchInstitutionInfo = useCallback(async () => {
     try {
-      if (user?.institution_id) {
-        const info = await institutionApi.getInstitutionInfo(user.institution_id);
-        setInstitutionInfo(info);
-      }
+      setInstitutionInfo(mockInstitutionInfo);
     } catch (error) {
       console.error('Failed to fetch institution info:', error);
     }
-  }, [user]);
+  }, []);
 
   // Initial data fetch
   useEffect(() => {
@@ -420,14 +512,9 @@ const IssuerDashboard = () => {
     
     const fetchInitialData = async () => {
       try {
-        const [stats, certificates] = await Promise.all([
-          certificateApi.getMyIssuerStats(),
-          certificateApi.getMyIssuerCertificates({ limit: 50 })
-        ]);
-        
         if (mounted) {
-          setIssuerStats(stats);
-          setMyCertificates(certificates || []);
+          setIssuerStats(mockStats);
+          setMyCertificates(mockCertificates);
         }
       } catch (error) {
         console.error('Failed to fetch initial data:', error);

@@ -1,20 +1,41 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, Request
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc
-from datetime import datetime, timedelta
-from typing import List, Optional, Dict, Any
+from typing import Optional
 import os
-import shutil
-import hashlib
+
+from database import get_db
+from models import User
+from auth import verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES
+from datetime import timedelta
+from contextlib import asynccontextmanager
+
+# Lifespan event handler
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "certificates"), exist_ok=True)
+    os.makedirs(os.path.join(UPLOAD_DIR, "verifications"), exist_ok=True)
+    yield
+    # Shutdown
+
+app = FastAPI(
+    title="CertiVert LGCSE Certificate Verification System",
+    description="Blockchain-based certificate verification system for LGCSE certificates",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
 import json
 import uuid
 from pathlib import Path
 from contextlib import asynccontextmanager
 
 # Import local modules
+from models import Base, Certificate, VerificationRequest, Invitation, Badge
 from models import Base, User, Certificate, VerificationRequest, Invitation, Badge
 from schemas import (
     UserCreate, UserResponse, Token, CertificateResponse
@@ -30,6 +51,7 @@ from api.mpesa import router as mpesa_router
 from api.dashboard import router as dashboard_router
 from api.institutions import router as institutions_router
 from api.admin_approval import router as admin_approval_router
+from api.ocr import router as ocr_router
 
 # Security
 from jose import JWTError, jwt
@@ -121,6 +143,7 @@ app.include_router(mpesa_router)
 app.include_router(dashboard_router)
 app.include_router(institutions_router)
 app.include_router(admin_approval_router)
+app.include_router(ocr_router)
 
 # Database dependency is imported from database module
 
@@ -229,12 +252,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     return user
 
 # Mount uploads directory
-@app.on_event("startup")
-def startup_event():
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    os.makedirs(os.path.join(UPLOAD_DIR, "certificates"), exist_ok=True)
-    os.makedirs(os.path.join(UPLOAD_DIR, "verifications"), exist_ok=True)
-
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Simple auth endpoints for testing

@@ -13,7 +13,7 @@ from jose import jwt as jose_jwt
 
 from database import get_db
 from models import User, LoginActivity, Institution
-from auth import AuthService, create_user_tokens
+from auth import create_access_token, get_password_hash
 from dotenv import load_dotenv
 
 load_dotenv()

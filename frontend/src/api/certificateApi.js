@@ -22,7 +22,7 @@ export const certificateApi = {
   
   // Extract data from certificate file using OCR
   extractCertificateData: async (formData) => {
-    const response = await api.post('/certificates/extract-data', formData, {
+    const response = await api.post('/ocr/extract-certificate-data', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       }
@@ -30,9 +30,29 @@ export const certificateApi = {
     return response.data;
   },
   
-  // Extract info from uploaded certificate
-  extractCertificateInfo: async (fileId) => {
-    const response = await api.post(`/certificates/${fileId}/extract`);
+  // Save extracted certificate data
+  saveExtractedCertificate: async (certificateData) => {
+    const response = await api.post('/ocr/save-extracted-certificate', certificateData);
+    return response.data;
+  },
+
+  // Get OCR extraction history
+  getExtractionHistory: async (limit = 10) => {
+    const response = await api.get('/ocr/extraction-history', {
+      params: { limit }
+    });
+    return response.data;
+  },
+
+  // Validate extracted certificate data
+  validateExtractedData: async (certificateData) => {
+    const response = await api.post('/ocr/validate-extracted-data', certificateData);
+    return response.data;
+  },
+
+  // Get OCR system status
+  getOcrStatus: async () => {
+    const response = await api.get('/ocr/ocr-status');
     return response.data;
   },
   
