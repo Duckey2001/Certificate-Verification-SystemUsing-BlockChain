@@ -7,10 +7,13 @@ import shutil
 import uuid
 from datetime import datetime
 
-from models import Certificate, User, VerificationRequest, AuditEvent, Payment
+from models import Certificate, User, VerificationRequest, AuditEvent, Payment, CreditTransaction
 from schemas import CertificateResponse
 from certificate_processor import CertificateProcessor, OCRDependencyError
+from enhanced_lgcse_processor import EnhancedLGCSEProcessor
 from utils.blockchain_service import BlockchainService
+from utils.enhanced_blockchain import store_certificate_on_blockchain, store_user_profile_on_blockchain
+from utils.realtime_notifications import notification_service
 from database import get_db
 from auth import get_current_user
 
@@ -48,10 +51,10 @@ async def extract_certificate_data(
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
-        # Process with OCR
+        # Use Enhanced LGCSE Processor for better OCR accuracy
         try:
-            processor = CertificateProcessor()
-            extracted_data = processor.process_certificate_file(temp_path)
+            enhanced_processor = EnhancedLGCSEProcessor()
+            extracted_data = enhanced_processor.process_certificate_file_enhanced(temp_path)
             
             # Clean up temp file
             os.remove(temp_path)
@@ -60,6 +63,27 @@ async def extract_certificate_data(
                 "success": True,
                 "data": extracted_data
             }
+        except Exception as enhanced_error:
+            # Fallback to regular processor if enhanced fails
+            try:
+                processor = CertificateProcessor()
+                extracted_data = processor.process_certificate_file(temp_path)
+                
+                # Clean up temp file
+                os.remove(temp_path)
+                
+                return {
+                    "success": True,
+                    "data": extracted_data,
+                    "warning": "Enhanced OCR failed, used fallback processor"
+                }
+            except Exception as fallback_error:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Both enhanced and fallback OCR failed: Enhanced - {str(enhanced_error)}, Fallback - {str(fallback_error)}"
+                )
             
         except OCRDependencyError as e:
             if os.path.exists(temp_path):
@@ -164,15 +188,82 @@ async def issue_certificate(
             certificate.file_path = file_path
             db.commit()
         
-        # Generate blockchain hash
+        # Generate blockchain hash and store on blockchain
         try:
             blockchain_service = BlockchainService()
             hash_result = blockchain_service.create_certificate_hash(certificate)
             certificate.certificate_hash = hash_result["hash"]
             db.commit()
+            
+            # Store certificate on blockchain
+            blockchain_tx_hash = await store_certificate_on_blockchain(certificate.certificate_hash)
+            if blockchain_tx_hash:
+                certificate.blockchain_tx_id = blockchain_tx_hash
+                certificate.blockchain_network = "hardhat"
+                db.commit()
         except Exception as e:
             # Log error but don't fail the issuance
             print(f"Blockchain hash generation failed: {e}")
+        
+        # Update user statistics
+        current_user.certificates_issued += 1
+        current_user.last_activity_at = datetime.utcnow()
+        db.commit()
+        
+        # Create credit transaction for certificate issuance
+        credit_transaction = CreditTransaction(
+            user_id=current_user.id,
+            transaction_type="usage",
+            amount=-1,  # Deduct 1 credit for certificate issuance
+            balance_before=current_user.available_credits,
+            balance_after=current_user.available_credits - 1,
+            reference_type="certificate",
+            reference_id=certificate.id,
+            description="Certificate issuance fee"
+        )
+        db.add(credit_transaction)
+        current_user.available_credits -= 1
+        db.commit()
+        
+        # Create comprehensive system activity
+        await notification_service.create_system_activity(
+            activity_type="certificate_issue",
+            title=f"New certificate issued for {student_name}",
+            description=f"LGCSE certificate issued for {student_name} ({student_id})",
+            actor_user_id=current_user.id,
+            certificate_hash=certificate.certificate_hash,
+            metadata={
+                "student_name": student_name,
+                "student_id": student_id,
+                "institution": institution,
+                "certificate_hash": certificate.certificate_hash,
+                "blockchain_tx_hash": blockchain_tx_hash
+            },
+            impact_score=7
+        )
+        
+        # Send real-time notifications to all verifiers
+        await notification_service.notify_certificate_issued(
+            current_user.id, 
+            student_name, 
+            certificate.certificate_hash
+        )
+        
+        # Create notification for issuer
+        await notification_service.create_notification(
+            current_user.id,
+            "Certificate Issued Successfully",
+            f"Certificate for {student_name} has been issued and stored on blockchain.",
+            "certificate_issued",
+            "high",
+            action_url=f"/certificates/{certificate.id}",
+            action_text="View Certificate",
+            metadata={
+                "certificate_id": certificate.id,
+                "certificate_hash": certificate.certificate_hash,
+                "student_name": student_name
+            }
+        )
         
         # Create audit event
         db.add(
@@ -184,7 +275,8 @@ async def issue_certificate(
                 payload={
                     "student_name": student_name,
                     "student_id": student_id,
-                    "institution": institution
+                    "institution": institution,
+                    "blockchain_tx_hash": blockchain_tx_hash
                 }
             )
         )
@@ -449,6 +541,86 @@ def _save_upload_to_disk(upload: UploadFile, upload_dir: str) -> tuple[str, str]
         shutil.copyfileobj(upload.file, buffer)
     return file_path, file_ext
 
+def _create_certificate_from_enhanced_extracted(
+    *,
+    db: Session,
+    current_user: User,
+    file_path: str,
+    certificate_data: Dict[str, Any],
+    certificate_hash: str,
+    validation_info: Dict[str, Any]
+) -> Certificate:
+    # Parse student name from enhanced extracted data
+    student_name = certificate_data.get("student_name", "")
+    name_parts = student_name.split()
+    first_name = name_parts[0] if name_parts else ""
+    surname = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+
+    # Parse examination year
+    examination_year = certificate_data.get("examination_year", "")
+    if not examination_year:
+        # Try to extract from examination session
+        session = certificate_data.get("examination_session", "")
+        if session:
+            import re
+            year_match = re.search(r'\b(20\d{2})\b', session)
+            if year_match:
+                examination_year = year_match.group(1)
+    
+    # Convert to integer if possible
+    try:
+        year = int(examination_year) if examination_year else 2023
+    except:
+        year = 2023
+
+    # Parse subjects from enhanced data
+    subjects = certificate_data.get("subjects", [])
+    if isinstance(subjects, list):
+        subjects_dict = {}
+        for subject in subjects:
+            if isinstance(subject, dict):
+                subject_name = subject.get("subject_name", subject.get("subject", ""))
+                grade = subject.get("grade", "")
+                if subject_name and grade:
+                    subjects_dict[subject_name] = {
+                        "grade": grade,
+                        "syllabus_code": subject.get("syllabus_code", ""),
+                        "points": subject.get("points", 0),
+                        "passed": subject.get("passed", True)
+                    }
+    else:
+        subjects_dict = subjects if isinstance(subjects, dict) else {}
+    
+    # Calculate credits based on subjects
+    credits = len(subjects_dict) * 5  # 5 credits per subject
+
+    certificate = Certificate(
+        certificate_hash=certificate_hash,
+        student_id=certificate_data.get("student_id", ""),
+        student_name=first_name,
+        student_surname=surname,
+        examination_year=year,
+        subjects=subjects_dict,
+        credits=credits,
+        institution=certificate_data.get("institution", ""),
+        issue_date=certificate_data.get("date_of_issue", ""),
+        issuer_id=current_user.id,
+        original_image_path=file_path,
+        extracted_data={
+            "enhanced_data": certificate_data,
+            "validation": validation_info,
+            "processing_method": "enhanced_ocr"
+        },
+        status="verified",
+        created_at=datetime.now(),
+        updated_at=datetime.now()
+    )
+
+    db.add(certificate)
+    db.commit()
+    db.refresh(certificate)
+    return certificate
+
 def _create_certificate_from_extracted(
     *,
     db: Session,
@@ -531,122 +703,233 @@ async def upload_certificate(
                 detail=f"Failed to initialize certificate processor: {str(e)}"
             )
 
-        # Process certificate with LGCSE validation
+        # Process certificate with Enhanced LGCSE Processor
         try:
-            result = processor.process_certificate(file_path)
-            certificate_data = result["certificate_data"]
-            certificate_hash = result["certificate_hash"]
-            validation_info = result["validation"]
-        except HTTPException as e:
-            # Re-raise HTTP exceptions from validation
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-            raise e
-        except Exception as e:
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-            raise HTTPException(
-                status_code=500,
-                detail=f"Certificate processing failed: {str(e)}"
+            enhanced_processor = EnhancedLGCSEProcessor()
+            enhanced_result = enhanced_processor.process_certificate_file_enhanced(file_path)
+            
+            # Extract data from enhanced result
+            certificate_data = enhanced_result["extracted_fields"]
+            certificate_hash = enhanced_result["certificate_hash"]
+            validation_info = enhanced_result["validation"]
+            
+            # Check if certificate already exists
+            existing_cert = db.query(Certificate).filter(
+                Certificate.certificate_hash == certificate_hash
+            ).first()
+            
+            if existing_cert:
+                # Return existing certificate data instead of error
+                return {
+                    "id": existing_cert.id,
+                    "certificate_hash": existing_cert.certificate_hash,
+                    "student_id": existing_cert.student_id,
+                    "student_name": existing_cert.student_name,
+                    "student_surname": existing_cert.student_surname,
+                    "examination_year": existing_cert.examination_year,
+                    "subjects": existing_cert.subjects,
+                    "credits": existing_cert.credits,
+                    "issue_date": existing_cert.issue_date,
+                    "issuer_id": existing_cert.issuer_id,
+                    "status": existing_cert.status,
+                    "created_at": existing_cert.created_at,
+                    "updated_at": existing_cert.updated_at,
+                    "blockchain_tx_id": existing_cert.blockchain_tx_id,
+                    "blockchain_network": existing_cert.blockchain_network,
+                    "blockchain_block_number": existing_cert.blockchain_block_number,
+                    "extracted_data": existing_cert.extracted_data,
+                    "validation": validation_info,
+                    "message": "Certificate already exists in the system"
+                }
+            
+            # Only store on blockchain if user is issuer or admin
+            blockchain_result = None
+            if current_user.role in ["admin", "issuer"]:
+                try:
+                    blockchain_service = BlockchainService()
+                    blockchain_result = blockchain_service.store_hash_on_blockchain({
+                        "certificate_hash": certificate_hash,
+                        "certificate_data": certificate_data
+                    })
+                except Exception as e:
+                    # Continue without blockchain if it fails
+                    blockchain_result = {"success": False, "error": str(e)}
+            
+            # Create certificate from enhanced extracted data
+            certificate = _create_certificate_from_enhanced_extracted(
+                db=db,
+                current_user=current_user,
+                file_path=file_path,
+                certificate_data=certificate_data,
+                certificate_hash=certificate_hash,
+                validation_info=validation_info
             )
-        
-        # Check if certificate already exists
-        existing_cert = db.query(Certificate).filter(
-            Certificate.certificate_hash == certificate_hash
-        ).first()
-        
-        if existing_cert:
-            # Return existing certificate data instead of error
+
+            # Persist blockchain metadata if available
+            if blockchain_result and blockchain_result.get("success"):
+                certificate.blockchain_tx_id = blockchain_result.get("transaction_id")
+                certificate.blockchain_network = blockchain_result.get("network")
+                certificate.blockchain_block_number = blockchain_result.get("block_number")
+            
+            db.commit()
+
+            db.add(
+                AuditEvent(
+                    event_type="certificate_uploaded",
+                    actor_user_id=current_user.id,
+                    actor_role=current_user.role,
+                    certificate_hash=certificate.certificate_hash,
+                    payload={
+                        "tx_id": certificate.blockchain_tx_id,
+                        "network": certificate.blockchain_network,
+                        "validation": validation_info
+                    },
+                )
+            )
+            db.commit()
+            
             return {
-                "id": existing_cert.id,
-                "certificate_hash": existing_cert.certificate_hash,
-                "student_id": existing_cert.student_id,
-                "student_name": existing_cert.student_name,
-                "student_surname": existing_cert.student_surname,
-                "examination_year": existing_cert.examination_year,
-                "subjects": existing_cert.subjects,
-                "credits": existing_cert.credits,
-                "issue_date": existing_cert.issue_date,
-                "issuer_id": existing_cert.issuer_id,
-                "status": existing_cert.status,
-                "created_at": existing_cert.created_at,
-                "updated_at": existing_cert.updated_at,
-                "blockchain_tx_id": existing_cert.blockchain_tx_id,
-                "blockchain_network": existing_cert.blockchain_network,
-                "blockchain_block_number": existing_cert.blockchain_block_number,
-                "extracted_data": existing_cert.extracted_data,
+                "id": certificate.id,
+                "certificate_hash": certificate.certificate_hash,
+                "student_id": certificate.student_id,
+                "student_name": certificate.student_name,
+                "student_surname": certificate.student_surname,
+                "examination_year": certificate.examination_year,
+                "subjects": certificate.subjects,
+                "credits": certificate.credits,
+                "issue_date": certificate.issue_date,
+                "issuer_id": certificate.issuer_id,
+                "status": certificate.status,
+                "created_at": certificate.created_at,
+                "updated_at": certificate.updated_at,
+                "blockchain_tx_id": certificate.blockchain_tx_id,
+                "blockchain_network": certificate.blockchain_network,
+                "blockchain_block_number": certificate.blockchain_block_number,
+                "extracted_data": certificate.extracted_data,
                 "validation": validation_info,
-                "message": "Certificate already exists in the system"
+                "message": "Certificate processed successfully with enhanced OCR"
             }
-        
-        # Only store on blockchain if user is issuer or admin
-        blockchain_result = None
-        if current_user.role in ["admin", "issuer"]:
+            
+        except Exception as enhanced_error:
+            # Fallback to regular processor if enhanced fails
             try:
-                blockchain_service = BlockchainService()
-                blockchain_result = blockchain_service.store_hash_on_blockchain({
-                    "certificate_hash": certificate_hash,
-                    "certificate_data": certificate_data
-                })
-            except Exception as e:
-                # Continue without blockchain if it fails
-                blockchain_result = {"success": False, "error": str(e)}
-        
-        certificate = _create_certificate_from_extracted(
-            db=db,
-            current_user=current_user,
-            file_path=file_path,
-            certificate_data={
-                "certificate_hash": certificate_hash,
-                "certificate_data": certificate_data,
-                "validation": validation_info
-            },
-        )
+                processor = CertificateProcessor()
+                result = processor.process_certificate(file_path)
+                certificate_data = result["certificate_data"]
+                certificate_hash = result["certificate_hash"]
+                validation_info = result["validation"]
+                
+                # Check if certificate already exists
+                existing_cert = db.query(Certificate).filter(
+                    Certificate.certificate_hash == certificate_hash
+                ).first()
+                
+                if existing_cert:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                    return {
+                        "id": existing_cert.id,
+                        "certificate_hash": existing_cert.certificate_hash,
+                        "student_id": existing_cert.student_id,
+                        "student_name": existing_cert.student_name,
+                        "student_surname": existing_cert.student_surname,
+                        "examination_year": existing_cert.examination_year,
+                        "subjects": existing_cert.subjects,
+                        "credits": existing_cert.credits,
+                        "issue_date": existing_cert.issue_date,
+                        "issuer_id": existing_cert.issuer_id,
+                        "status": existing_cert.status,
+                        "created_at": existing_cert.created_at,
+                        "updated_at": existing_cert.updated_at,
+                        "blockchain_tx_id": existing_cert.blockchain_tx_id,
+                        "blockchain_network": existing_cert.blockchain_network,
+                        "blockchain_block_number": existing_cert.blockchain_block_number,
+                        "extracted_data": existing_cert.extracted_data,
+                        "validation": validation_info,
+                        "message": "Certificate already exists in the system"
+                    }
+                
+                # Only store on blockchain if user is issuer or admin
+                blockchain_result = None
+                if current_user.role in ["admin", "issuer"]:
+                    try:
+                        blockchain_service = BlockchainService()
+                        blockchain_result = blockchain_service.store_hash_on_blockchain({
+                            "certificate_hash": certificate_hash,
+                            "certificate_data": certificate_data
+                        })
+                    except Exception as e:
+                        # Continue without blockchain if it fails
+                        blockchain_result = {"success": False, "error": str(e)}
+                
+                certificate = _create_certificate_from_extracted(
+                    db=db,
+                    current_user=current_user,
+                    file_path=file_path,
+                    certificate_data={
+                        "certificate_hash": certificate_hash,
+                        "certificate_data": certificate_data,
+                        "validation": validation_info
+                    },
+                )
 
-        # Persist blockchain metadata if available
-        if blockchain_result and blockchain_result.get("success"):
-            certificate.blockchain_tx_id = blockchain_result.get("transaction_id")
-            certificate.blockchain_network = blockchain_result.get("network")
-            certificate.blockchain_block_number = blockchain_result.get("block_number")
-        
-        db.commit()
+                # Persist blockchain metadata if available
+                if blockchain_result and blockchain_result.get("success"):
+                    certificate.blockchain_tx_id = blockchain_result.get("transaction_id")
+                    certificate.blockchain_network = blockchain_result.get("network")
+                    certificate.blockchain_block_number = blockchain_result.get("block_number")
+                
+                db.commit()
 
-        db.add(
-            AuditEvent(
-                event_type="certificate_uploaded",
-                actor_user_id=current_user.id,
-                actor_role=current_user.role,
-                certificate_hash=certificate.certificate_hash,
-                payload={
-                    "tx_id": certificate.blockchain_tx_id,
-                    "network": certificate.blockchain_network,
-                    "validation": validation_info
-                },
-            )
-        )
-        db.commit()
-        
-        return {
-            "id": certificate.id,
-            "certificate_hash": certificate.certificate_hash,
-            "student_id": certificate.student_id,
-            "student_name": certificate.student_name,
-            "student_surname": certificate.student_surname,
-            "examination_year": certificate.examination_year,
-            "subjects": certificate.subjects,
-            "credits": certificate.credits,
-            "issue_date": certificate.issue_date,
-            "issuer_id": certificate.issuer_id,
-            "status": certificate.status,
-            "created_at": certificate.created_at,
-            "updated_at": certificate.updated_at,
-            "blockchain_tx_id": certificate.blockchain_tx_id,
-            "blockchain_network": certificate.blockchain_network,
-            "blockchain_block_number": certificate.blockchain_block_number,
-            "extracted_data": certificate.extracted_data,
-            "validation": validation_info,
-            "message": "Certificate processed successfully"
-        }
+                db.add(
+                    AuditEvent(
+                        event_type="certificate_uploaded",
+                        actor_user_id=current_user.id,
+                        actor_role=current_user.role,
+                        certificate_hash=certificate.certificate_hash,
+                        payload={
+                            "tx_id": certificate.blockchain_tx_id,
+                            "network": certificate.blockchain_network,
+                            "validation": validation_info
+                        },
+                    )
+                )
+                db.commit()
+                
+                return {
+                    "id": certificate.id,
+                    "certificate_hash": certificate.certificate_hash,
+                    "student_id": certificate.student_id,
+                    "student_name": certificate.student_name,
+                    "student_surname": certificate.student_surname,
+                    "examination_year": certificate.examination_year,
+                    "subjects": certificate.subjects,
+                    "credits": certificate.credits,
+                    "issue_date": certificate.issue_date,
+                    "issuer_id": certificate.issuer_id,
+                    "status": certificate.status,
+                    "created_at": certificate.created_at,
+                    "updated_at": certificate.updated_at,
+                    "blockchain_tx_id": certificate.blockchain_tx_id,
+                    "blockchain_network": certificate.blockchain_network,
+                    "blockchain_block_number": certificate.blockchain_block_number,
+                    "extracted_data": certificate.extracted_data,
+                    "validation": validation_info,
+                    "message": "Certificate processed successfully with fallback OCR"
+                }
+                
+            except HTTPException as e:
+                # Re-raise HTTP exceptions from validation
+                if file_path and os.path.exists(file_path):
+                    os.remove(file_path)
+                raise e
+            except Exception as fallback_error:
+                if file_path and os.path.exists(file_path):
+                    os.remove(file_path)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Both enhanced and fallback OCR failed: Enhanced - {str(enhanced_error)}, Fallback - {str(fallback_error)}"
+                )
 
     except Exception as e:
         if file_path and os.path.exists(file_path):
@@ -674,7 +957,7 @@ async def upload_certificates_bulk(
     upload_dir = "uploads/certificates"
 
     try:
-        processor = CertificateProcessor()
+        enhanced_processor = EnhancedLGCSEProcessor()
     except OCRDependencyError as e:
         raise HTTPException(
             status_code=400,
@@ -683,6 +966,13 @@ async def upload_certificates_bulk(
 
     blockchain_service = BlockchainService()
     results: List[Dict[str, Any]] = []
+    processing_stats = {
+        "total_files": len(files),
+        "enhanced_processed": 0,
+        "fallback_processed": 0,
+        "failed": 0,
+        "duplicates": 0
+    }
 
     for f in files:
         file_path = None
@@ -695,78 +985,194 @@ async def upload_certificates_bulk(
                     "error": f"Unsupported file type: {file_ext}",
                     "failure_reason": "Unsupported file type",
                 })
+                processing_stats["failed"] += 1
                 continue
 
             file_path, _ = _save_upload_to_disk(f, upload_dir)
-            certificate_data = processor.process_certificate_file(file_path)
+            
+            # Try Enhanced LGCSE Processor first
+            try:
+                enhanced_result = enhanced_processor.process_certificate_file_enhanced(file_path)
+                certificate_data = enhanced_result["extracted_fields"]
+                certificate_hash = enhanced_result["certificate_hash"]
+                validation_info = enhanced_result["validation"]
+                
+                processing_stats["enhanced_processed"] += 1
+                
+                # Check for duplicate
+                existing_cert = db.query(Certificate).filter(
+                    Certificate.certificate_hash == certificate_hash
+                ).first()
+                if existing_cert:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                    results.append({
+                        "filename": f.filename,
+                        "success": False,
+                        "error": "Certificate already exists",
+                        "failure_reason": "Duplicate certificate",
+                        "certificate_hash": certificate_hash,
+                    })
+                    processing_stats["duplicates"] += 1
+                    continue
 
-            existing_cert = db.query(Certificate).filter(
-                Certificate.certificate_hash == certificate_data["certificate_hash"]
-            ).first()
-            if existing_cert:
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                results.append({
-                    "filename": f.filename,
-                    "success": False,
-                    "error": "Certificate already exists",
-                    "failure_reason": "Duplicate certificate",
-                    "certificate_hash": certificate_data["certificate_hash"],
+                # Store on blockchain
+                blockchain_result = blockchain_service.store_hash_on_blockchain({
+                    "certificate_hash": certificate_hash,
+                    "certificate_data": certificate_data
                 })
-                continue
+                if not blockchain_result.get("success"):
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                    results.append({
+                        "filename": f.filename,
+                        "success": False,
+                        "error": f"Blockchain store failed: {blockchain_result.get('error')}",
+                        "failure_reason": "Blockchain store failed",
+                    })
+                    processing_stats["failed"] += 1
+                    continue
 
-            blockchain_result = blockchain_service.store_hash_on_blockchain(certificate_data)
-            if not blockchain_result.get("success"):
-                if os.path.exists(file_path):
-                    os.remove(file_path)
-                results.append({
-                    "filename": f.filename,
-                    "success": False,
-                    "error": f"Blockchain store failed: {blockchain_result.get('error')}",
-                    "failure_reason": "Blockchain store failed",
-                })
-                continue
-
-            cert = _create_certificate_from_extracted(
-                db=db,
-                current_user=current_user,
-                file_path=file_path,
-                certificate_data=certificate_data,
-            )
-
-            cert.blockchain_tx_id = blockchain_result.get("transaction_id")
-            cert.blockchain_network = blockchain_result.get("network")
-            cert.blockchain_block_number = blockchain_result.get("block_number")
-            db.commit()
-
-            db.add(
-                AuditEvent(
-                    event_type="certificate_uploaded",
-                    actor_user_id=current_user.id,
-                    actor_role=current_user.role,
-                    certificate_hash=cert.certificate_hash,
-                    payload={
-                        "tx_id": cert.blockchain_tx_id,
-                        "network": cert.blockchain_network,
-                    },
+                # Create certificate from enhanced data
+                cert = _create_certificate_from_enhanced_extracted(
+                    db=db,
+                    current_user=current_user,
+                    file_path=file_path,
+                    certificate_data=certificate_data,
+                    certificate_hash=certificate_hash,
+                    validation_info=validation_info
                 )
-            )
-            db.commit()
 
-            results.append({
-                "filename": f.filename,
-                "success": True,
-                "confidence": certificate_data.get("extraction_confidence", 0.0),
-                "certificate_id": cert.id,
-                "certificate_hash": cert.certificate_hash,
-                "transaction_id": blockchain_result.get("transaction_id"),
-                "extracted": {
-                    "student_name": certificate_data.get("student_name", ""),
-                    "student_number": certificate_data.get("student_number", ""),
-                    "institution": certificate_data.get("institution", ""),
-                    "date_of_issue": certificate_data.get("date_of_issue", ""),
-                },
-            })
+                cert.blockchain_tx_id = blockchain_result.get("transaction_id")
+                cert.blockchain_network = blockchain_result.get("network")
+                cert.blockchain_block_number = blockchain_result.get("block_number")
+                db.commit()
+
+                db.add(
+                    AuditEvent(
+                        event_type="certificate_uploaded",
+                        actor_user_id=current_user.id,
+                        actor_role=current_user.role,
+                        certificate_hash=cert.certificate_hash,
+                        payload={
+                            "tx_id": cert.blockchain_tx_id,
+                            "network": cert.blockchain_network,
+                            "validation": validation_info,
+                            "processing_method": "enhanced_bulk"
+                        },
+                    )
+                )
+                db.commit()
+
+                results.append({
+                    "filename": f.filename,
+                    "success": True,
+                    "confidence": validation_info.get("confidence", 0.0),
+                    "certificate_id": cert.id,
+                    "certificate_hash": certificate_hash,
+                    "transaction_id": blockchain_result.get("transaction_id"),
+                    "processing_method": "enhanced_ocr",
+                    "extracted": {
+                        "student_name": certificate_data.get("student_name", ""),
+                        "student_id": certificate_data.get("student_id", ""),
+                        "institution": certificate_data.get("institution", ""),
+                        "examination_year": certificate_data.get("examination_year", ""),
+                        "subjects_count": len(certificate_data.get("subjects", [])),
+                    },
+                })
+                
+            except Exception as enhanced_error:
+                # Fallback to regular processor
+                try:
+                    processor = CertificateProcessor()
+                    fallback_result = processor.process_certificate_file(file_path)
+                    certificate_hash = fallback_result.get("certificate_hash")
+                    
+                    processing_stats["fallback_processed"] += 1
+                    
+                    # Check for duplicate
+                    existing_cert = db.query(Certificate).filter(
+                        Certificate.certificate_hash == certificate_hash
+                    ).first()
+                    if existing_cert:
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                        results.append({
+                            "filename": f.filename,
+                            "success": False,
+                            "error": "Certificate already exists",
+                            "failure_reason": "Duplicate certificate",
+                            "certificate_hash": certificate_hash,
+                        })
+                        processing_stats["duplicates"] += 1
+                        continue
+
+                    blockchain_result = blockchain_service.store_hash_on_blockchain(fallback_result)
+                    if not blockchain_result.get("success"):
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                        results.append({
+                            "filename": f.filename,
+                            "success": False,
+                            "error": f"Blockchain store failed: {blockchain_result.get('error')}",
+                            "failure_reason": "Blockchain store failed",
+                        })
+                        processing_stats["failed"] += 1
+                        continue
+
+                    cert = _create_certificate_from_extracted(
+                        db=db,
+                        current_user=current_user,
+                        file_path=file_path,
+                        certificate_data=fallback_result,
+                    )
+
+                    cert.blockchain_tx_id = blockchain_result.get("transaction_id")
+                    cert.blockchain_network = blockchain_result.get("network")
+                    cert.blockchain_block_number = blockchain_result.get("block_number")
+                    db.commit()
+
+                    db.add(
+                        AuditEvent(
+                            event_type="certificate_uploaded",
+                            actor_user_id=current_user.id,
+                            actor_role=current_user.role,
+                            certificate_hash=cert.certificate_hash,
+                            payload={
+                                "tx_id": cert.blockchain_tx_id,
+                                "network": cert.blockchain_network,
+                                "processing_method": "fallback_bulk"
+                            },
+                        )
+                    )
+                    db.commit()
+
+                    results.append({
+                        "filename": f.filename,
+                        "success": True,
+                        "confidence": fallback_result.get("extraction_confidence", 0.0),
+                        "certificate_id": cert.id,
+                        "certificate_hash": certificate_hash,
+                        "transaction_id": blockchain_result.get("transaction_id"),
+                        "processing_method": "fallback_ocr",
+                        "extracted": {
+                            "student_name": fallback_result.get("student_name", ""),
+                            "student_number": fallback_result.get("student_number", ""),
+                            "institution": fallback_result.get("institution", ""),
+                            "date_of_issue": fallback_result.get("date_of_issue", ""),
+                        },
+                    })
+                    
+                except Exception as fallback_error:
+                    if file_path and os.path.exists(file_path):
+                        os.remove(file_path)
+                    results.append({
+                        "filename": f.filename,
+                        "success": False,
+                        "error": f"Both processors failed: Enhanced - {str(enhanced_error)}, Fallback - {str(fallback_error)}",
+                        "failure_reason": "Processing failed",
+                    })
+                    processing_stats["failed"] += 1
 
         except OCRDependencyError as e:
             if file_path and os.path.exists(file_path):
@@ -777,15 +1183,7 @@ async def upload_certificates_bulk(
                 "error": str(e),
                 "failure_reason": f"OCR dependency missing: {e}",
             })
-        except NonLGCSECertificateError as e:
-            if file_path and os.path.exists(file_path):
-                os.remove(file_path)
-            results.append({
-                "filename": getattr(f, "filename", "unknown"),
-                "success": False,
-                "error": str(e),
-                "failure_reason": "Not an LGCSE certificate",
-            })
+            processing_stats["failed"] += 1
         except Exception as e:
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
@@ -795,16 +1193,18 @@ async def upload_certificates_bulk(
                 "error": str(e),
                 "failure_reason": str(e),
             })
+            processing_stats["failed"] += 1
 
     return {
         "count": len(files),
         "success_count": sum(1 for r in results if r.get("success")),
         "failure_count": sum(1 for r in results if not r.get("success")),
+        "processing_stats": processing_stats,
         "results": results
     }
 
-@router.get("/{certificate_hash}", response_model=CertificateResponse)
-def get_certificate(
+@router.get("/certificates/{certificate_hash}")
+async def get_certificate_by_hash(
     certificate_hash: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)

@@ -5,16 +5,61 @@ const RecentActivity = ({ title = "Recent Activity", limit = 10 }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Simulate fetching activities
-    const mockActivities = [
-      { id: 1, type: 'certificate_issued', description: 'New certificate issued for John Doe', timestamp: new Date(), user: { username: 'Issuer' } },
-      { id: 2, type: 'certificate_verified', description: 'Certificate verified by Verifier', timestamp: new Date(Date.now() - 3600000), user: { username: 'Verifier' } },
-      { id: 3, type: 'payment_received', description: 'Payment of M300 received', timestamp: new Date(Date.now() - 7200000), user: { username: 'System' } },
-      { id: 4, type: 'bulk_upload', description: 'Bulk upload of 5 certificates', timestamp: new Date(Date.now() - 86400000), user: { username: 'Issuer' } },
-    ];
-    
-    setActivities(mockActivities.slice(0, limit));
-    setLoading(false);
+    const fetchRealActivities = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/admin/system-logs?limit=10');
+        
+        // Check if response is OK
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        // Check content type
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+          throw new Error('Received non-JSON response from server');
+        }
+        
+        const data = await response.json();
+        
+        const formattedActivities = data.logs?.map(log => ({
+          id: log.id,
+          type: log.event_type,
+          description: getEventDescription(log),
+          timestamp: log.created_at,
+          user: { username: log.actor_role || 'System' }
+        })) || [];
+        setActivities(formattedActivities);
+      } catch (error) {
+        console.error('Failed to fetch activities:', error);
+        // Set fallback data or show error to user
+        setActivities([]); // or some mock data
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const getEventDescription = (log) => {
+      switch (log.event_type) {
+        case 'certificate_issued':
+          return `New certificate issued for ${log.payload?.student_name || 'Student'}`;
+        case 'certificate_verified':
+          return 'Certificate verified';
+        case 'payment_confirmed':
+          return `Payment of M${log.payload?.amount || '0'} received`;
+        case 'bulk_upload':
+          return 'Bulk upload of certificates';
+        case 'user_registered':
+          return 'New user registered';
+        case 'user_approved':
+          return 'User approved';
+        default:
+          return 'System activity';
+      }
+    };
+
+    fetchRealActivities();
   }, [limit]);
 
   const getActivityIcon = (type) => {

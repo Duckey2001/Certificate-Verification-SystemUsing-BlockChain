@@ -22,6 +22,16 @@ export const certificateApi = {
   
   // Extract data from certificate file using OCR
   extractCertificateData: async (formData) => {
+    const response = await api.post('/ocr/extract', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      }
+    });
+    return response.data;
+  },
+
+  // Alternative OCR endpoint (fallback)
+  extractCertificateDataLegacy: async (formData) => {
     const response = await api.post('/ocr/extract-certificate-data', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -167,6 +177,20 @@ export const certificateApi = {
   // Get certificate statistics
   getCertificateStats: async (issuerId) => {
     const response = await api.get(`/certificates/stats/${issuerId}`);
+    return response.data;
+  },
+
+  // Get recent activities
+  getRecentActivities: async (limit = 10) => {
+    const response = await api.get('/activities/recent', {
+      params: { limit }
+    });
+    return response.data;
+  },
+
+  // Get activity statistics
+  getActivityStats: async () => {
+    const response = await api.get('/activities/stats');
     return response.data;
   }
 };

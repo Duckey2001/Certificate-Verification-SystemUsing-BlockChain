@@ -1,611 +1,549 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import RecentActivity from '../../components/RecentActivity';
 import { adminApi, authApi, paymentApi } from '../../api';
+import RecentActivity from '../../components/RecentActivity';
 import CertificatePreview from '../../components/CertificatePreview';
 import PaymentDetails from '../../components/PaymentDetails';
 import UserProfileCard from '../../components/UserProfileCard';
+import BlockchainVisualization from '../../components/BlockchainVisualization';
+import NetworkMonitor from '../../components/NetworkMonitor';
+import BlockchainEducation from '../../components/BlockchainEducation';
+import AdminStats from '../../components/AdminStats';
+import AdminCharts from '../../components/AdminCharts';
+import DataTable from '../../components/DataTable';
+import NotificationCenter from '../../components/NotificationCenter';
+import QuickActions from '../../components/QuickActions';
+import SystemHealth from '../SystemHealth';
+import UserManagement from '../../components/UserManagement';
+import CertificateManagement from '../../components/CertificateManagement';
+import VerificationManagement from '../../components/VerificationManagement';
+import PaymentManagement from '../../components/PaymentManagement';
+// import InvitationManagement from '../../components/InvitationManagement';
+// import LogViewer from '../../components/LogViewer';
+// import ThemeCustomizer from '../../components/ThemeCustomizer';
+import ExportData from '../../components/ExportData';
+import { 
+  FiHome, 
+  FiUsers, 
+  FiFileText, 
+  FiCheckCircle, 
+  FiDollarSign, 
+  FiMail, 
+  FiActivity, 
+  FiBarChart2,
+  FiShield,
+  FiGlobe,
+  FiBook,
+  FiSettings,
+  FiLogOut,
+  FiMenu,
+  FiBell,
+  FiSearch,
+  FiFilter,
+  FiDownload,
+  FiRefreshCw,
+  FiPlus,
+  FiTrash2,
+  FiEdit,
+  FiEye,
+  FiLock,
+  FiUnlock,
+  FiUserCheck,
+  FiUserX,
+  FiAward,
+  FiClock,
+  FiTrendingUp,
+  FiTrendingDown,
+  FiServer,
+  FiCpu,
+  FiDatabase,
+  FiCloud,
+  FiZap,
+  FiAlertCircle,
+  FiCheck,
+  FiX
+} from 'react-icons/fi';
+import { 
+  FaBitcoin, 
+  FaEthereum, 
+  FaGithub, 
+  FaTwitter, 
+  FaLinkedin,
+  FaTelegram,
+  FaDiscord,
+  FaReddit
+} from 'react-icons/fa';
+import { motion, AnimatePresence } from 'framer-motion';
+import { format, subDays, isWithinInterval, parseISO } from 'date-fns';
 
-const TABS = ['overview', 'users', 'certificates', 'verifications', 'payments', 'invitations', 'logs'];
+const TABS = [
+  { id: 'overview', label: 'Overview', icon: FiHome, color: 'purple' },
+  { id: 'blockchain', label: 'Blockchain', icon: FaBitcoin, color: 'orange' },
+  { id: 'network', label: 'Network', icon: FiGlobe, color: 'blue' },
+  { id: 'education', label: 'Education', icon: FiBook, color: 'green' },
+  { id: 'users', label: 'Users', icon: FiUsers, color: 'indigo' },
+  { id: 'certificates', label: 'Certificates', icon: FiFileText, color: 'yellow' },
+  { id: 'verifications', label: 'Verifications', icon: FiCheckCircle, color: 'teal' },
+  { id: 'payments', label: 'Payments', icon: FiDollarSign, color: 'pink' },
+  { id: 'invitations', label: 'Invitations', icon: FiMail, color: 'cyan' },
+  { id: 'logs', label: 'Logs', icon: FiActivity, color: 'gray' }
+];
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
   const [stats, setStats] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
-  const [users, setUsers] = useState({ users: [], total: 0 });
-  const [certificates, setCertificates] = useState({ certificates: [], total: 0 });
-  const [verifications, setVerifications] = useState({ verifications: [], total: 0 });
-  const [payments, setPayments] = useState({ payments: [], total: 0 });
-  const [logs, setLogs] = useState({ logs: [], total: 0 });
-  const [invitations, setInvitations] = useState([]);
-  const [pendingUsers, setPendingUsers] = useState([]);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState('verifier');
-  const [inviteLoading, setInviteLoading] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState({ users: 1, certificates: 1, verifications: 1, payments: 1, logs: 1 });
-  const [actionMsg, setActionMsg] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [userRoleFilter, setUserRoleFilter] = useState('all');
-  const [userInstitutionFilter, setUserInstitutionFilter] = useState('');
-  const [userSearch, setUserSearch] = useState('');
-  const [selectedCertificate, setSelectedCertificate] = useState(null);
-  const [showPreview, setShowPreview] = useState(false);
-  const [selectedPayment, setSelectedPayment] = useState(null);
-  const [showPaymentDetails, setShowPaymentDetails] = useState(false);
-  const [dateRange, setDateRange] = useState({ start: '', end: '' });
-  const [paymentStats, setPaymentStats] = useState(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+  // const [showThemeCustomizer, setShowThemeCustomizer] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filters, setFilters] = useState({});
+  const [dateRange, setDateRange] = useState({
+    start: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
+    end: format(new Date(), 'yyyy-MM-dd')
+  });
+  const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [theme, setTheme] = useState('light');
+  const [chartData, setChartData] = useState(null);
+  const [systemHealth, setSystemHealth] = useState(null);
+  const [recentAlerts, setRecentAlerts] = useState([]);
 
-  // Mock data for development
-  const mockStats = {
-    total_users: 156,
-    total_certificates: 342,
-    total_verifications: 1256,
-    total_payments: 89,
-    total_payment_amount: 4450.75,
-    valid_verifications: 1180,
-    invalid_verifications: 76
-  };
-
-  const mockPendingUsers = [
-    { id: 101, username: 'john_doe', email: 'john.doe@example.com', created_at: new Date().toISOString() },
-    { id: 102, username: 'jane_smith', email: 'jane.smith@example.com', created_at: new Date().toISOString() },
-    { id: 103, username: 'mike_wilson', email: 'mike.wilson@example.com', created_at: new Date().toISOString() },
-  ];
-
-  const mockUsers = {
-    users: [
-      { id: 1, username: 'admin_user', email: 'admin@certivert.com', role: 'admin', institution_code: 'HQ', is_active: true, last_login_at: new Date().toISOString() },
-      { id: 2, username: 'mpholekunye6', email: 'mpholekunye6@gmail.com', role: 'admin', institution_code: 'Ecol', is_active: true, last_login_at: new Date().toISOString() },
-      { id: 3, username: 'issuer1', email: 'issuer@institution.com', role: 'issuer', institution_code: 'UNI001', is_active: true, last_login_at: new Date(Date.now() - 86400000).toISOString() },
-      { id: 4, username: 'verifier1', email: 'verifier@example.com', role: 'verifier', institution_code: null, is_active: true, last_login_at: new Date(Date.now() - 172800000).toISOString() },
-      { id: 5, username: 'pending_user', email: 'pending@example.com', role: 'pending', institution_code: null, is_active: false, last_login_at: null },
-    ],
-    total: 5
-  };
-
-  const mockCertificates = {
-    certificates: [
-      { id: 'C001', certificate_hash: '0x7d8a9f3e2b1c4d5e6f7a8b9c0d1e2f3a4b5c6d7e', student_name: 'Alice Johnson', student_id: 'STU001', issuer_code: 'UNI001', issue_date: new Date().toISOString(), status: 'verified', blockchain_tx_id: '0x9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b', blockchain_network: 'Hardhat' },
-      { id: 'C002', certificate_hash: '0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', student_name: 'Bob Smith', student_id: 'STU002', issuer_code: 'UNI001', issue_date: new Date(Date.now() - 604800000).toISOString(), status: 'verified', blockchain_tx_id: '0x8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e', blockchain_network: 'Hardhat' },
-      { id: 'C003', certificate_hash: '0x9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e', student_name: 'Carol Davis', student_id: 'STU003', issuer_code: 'UNI002', issue_date: new Date(Date.now() - 1209600000).toISOString(), status: 'pending', blockchain_tx_id: null, blockchain_network: null },
-    ],
-    total: 3
-  };
-
-  const mockVerifications = {
-    verifications: [
-      { id: 1001, verification_date: new Date().toISOString(), certificate_hash: '0x7d8a9f3e2b1c4d5e6f7a8b9c0d1e2f3a4b5c6d7e', verifier_name: 'verifier1', verifier_id: 4, result: 'verified', blockchain_match: true, payment_method: 'mpesa_lesotho', verification_fee: 5.00 },
-      { id: 1002, verification_date: new Date(Date.now() - 86400000).toISOString(), certificate_hash: '0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b', verifier_name: 'verifier1', verifier_id: 4, result: 'verified', blockchain_match: true, payment_method: 'mpesa', verification_fee: 5.00 },
-      { id: 1003, verification_date: new Date(Date.now() - 172800000).toISOString(), certificate_hash: '0x9f8e7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b2a1f0e', verifier_name: 'external', verifier_id: null, result: 'invalid', blockchain_match: false, payment_method: 'ecocash', verification_fee: 5.00 },
-    ],
-    total: 3
-  };
-
-  const mockPayments = {
-    payments: [
-      { id: 5001, created_at: new Date().toISOString(), user_name: 'Alice Johnson', amount: 5.00, method: 'mpesa_lesotho', reference: 'REF123456', status: 'CONFIRMED', mpesa_transaction_id: 'MPS789012' },
-      { id: 5002, created_at: new Date(Date.now() - 86400000).toISOString(), user_name: 'Bob Smith', amount: 5.00, method: 'mpesa', reference: 'REF789012', status: 'CONFIRMED', mpesa_transaction_id: 'MPS345678' },
-      { id: 5003, created_at: new Date(Date.now() - 172800000).toISOString(), user_name: 'Carol Davis', amount: 5.00, method: 'ecocash', reference: 'REF345678', status: 'PENDING', mpesa_transaction_id: null },
-    ],
-    total: 3
-  };
-
-  const mockLogs = {
-    logs: [
-      { id: 9001, created_at: new Date().toISOString(), event_type: 'user_login_success', actor_user_id: '2', actor_role: 'admin', target_user_id: null, payload: { ip: '192.168.1.100' } },
-      { id: 9002, created_at: new Date(Date.now() - 3600000).toISOString(), event_type: 'certificate_issued', actor_user_id: '3', actor_role: 'issuer', target_user_id: null, certificate_hash: '0x7d8a9f3e2b1c4d5e6f7a8b9c0d1e2f3a4b5c6d7e', payload: { student_name: 'Alice Johnson' } },
-      { id: 9003, created_at: new Date(Date.now() - 7200000).toISOString(), event_type: 'payment_confirmed', actor_user_id: 'System', target_user_id: null, payload: { payment_id: 5001, amount: 5.00 } },
-      { id: 9004, created_at: new Date(Date.now() - 86400000).toISOString(), event_type: 'user_approved', actor_user_id: '1', actor_role: 'admin', target_user_id: '5', payload: { role: 'verifier' } },
-    ],
-    total: 4
-  };
-
-  const mockInvitations = [
-    { id: 3001, email: 'new.issuer@institution.com', role: 'issuer', used: false, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 604800000).toISOString(), link: 'https://certivert.com/invite/abc123' },
-    { id: 3002, email: 'external.verifier@example.com', role: 'verifier', used: false, created_at: new Date(Date.now() - 86400000).toISOString(), expires_at: new Date(Date.now() + 518400000).toISOString(), link: 'https://certivert.com/invite/def456' },
-    { id: 3003, email: 'used.invite@example.com', role: 'admin', used: true, created_at: new Date(Date.now() - 1209600000).toISOString(), expires_at: new Date(Date.now() - 604800000).toISOString(), link: 'https://certivert.com/invite/ghi789' },
-  ];
-
-  const mockPaymentStats = {
-    total_payments: 89,
-    total_amount: 4450.75,
-    confirmed_payments: 76,
-    pending_payments: 13
-  };
-
-  // Fetch initial data
+  // Load initial data
   useEffect(() => {
     let mounted = true;
-    
+    let refreshTimer;
+
     const fetchInitialData = async () => {
       try {
-        // Try to fetch real data, fallback to mock if not available
-        let statsData = { stats: null };
-        let pendingData = [];
+        setLoading(true);
         
-        try {
-          if (adminApi.getSystemStats) {
-            statsData = await adminApi.getSystemStats();
-          } else {
-            throw new Error('API function not available');
-          }
-        } catch (e) {
-          console.log('Using mock stats data');
-          statsData = { stats: mockStats };
-        }
-        
-        try {
-          if (adminApi.getPendingUsers) {
-            pendingData = await adminApi.getPendingUsers();
-          } else {
-            throw new Error('API function not available');
-          }
-        } catch (e) {
-          console.log('Using mock pending data');
-          pendingData = mockPendingUsers;
-        }
-        
+        // Fetch system stats
+        const statsData = await adminApi.getSystemStats();
+        if (mounted) setStats(statsData);
+
+        // Fetch system health
+        const healthData = await adminApi.getSystemHealth();
+        if (mounted) setSystemHealth(healthData);
+
+        // Fetch chart data
+        const chartData = await adminApi.getDashboardCharts(dateRange);
+        if (mounted) setChartData(chartData);
+
+        // Fetch notifications
+        const notifData = await adminApi.getNotifications();
         if (mounted) {
-          setStats(statsData?.stats || mockStats);
-          setPendingUsers(pendingData || mockPendingUsers);
+          setNotifications(notifData);
+          setUnreadCount(notifData.filter(n => !n.read).length);
         }
+
+        // Fetch recent alerts
+        const alertsData = await adminApi.getRecentAlerts();
+        if (mounted) setRecentAlerts(alertsData);
+
       } catch (error) {
         console.error('Failed to fetch initial data:', error);
-        if (mounted) {
-          setStats(mockStats);
-          setPendingUsers(mockPendingUsers);
-        }
+        if (mounted) setError('Failed to load dashboard data');
+      } finally {
+        if (mounted) setLoading(false);
       }
     };
-    
+
     fetchInitialData();
-    
-    return () => { mounted = false; };
+
+    // Set up auto-refresh
+    if (autoRefresh) {
+      refreshTimer = setInterval(() => {
+        fetchInitialData();
+      }, refreshInterval);
+    }
+
+    return () => {
+      mounted = false;
+      if (refreshTimer) clearInterval(refreshTimer);
+    };
+  }, [dateRange, autoRefresh, refreshInterval]);
+
+  // Handle tab change
+  const handleTabChange = useCallback((tabId) => {
+    setActiveTab(tabId);
+    // Reset filters when changing tabs
+    setFilters({});
+    setSearchQuery('');
   }, []);
 
-  // Fetch data based on active tab
-  useEffect(() => {
-    const fetchTabData = async () => {
-      setLoading(true);
-      try {
-        if (activeTab === 'users') {
-          try {
-            if (adminApi.getAllUsers) {
-              const data = await adminApi.getAllUsers(page.users, 20, {
-                role: userRoleFilter === 'all' ? undefined : userRoleFilter,
-                institution: userInstitutionFilter || undefined,
-                q: userSearch || undefined
-              });
-              setUsers(data);
-            } else {
-              setUsers(mockUsers);
-            }
-          } catch (e) {
-            console.log('Using mock users data');
-            setUsers(mockUsers);
-          }
-        } else if (activeTab === 'certificates') {
-          try {
-            if (adminApi.getAllCertificates) {
-              const data = await adminApi.getAllCertificates(page.certificates, 20, {
-                start_date: dateRange.start || undefined,
-                end_date: dateRange.end || undefined
-              });
-              setCertificates(data);
-            } else {
-              setCertificates(mockCertificates);
-            }
-          } catch (e) {
-            console.log('Using mock certificates data');
-            setCertificates(mockCertificates);
-          }
-        } else if (activeTab === 'verifications') {
-          try {
-            if (adminApi.getAllVerifications) {
-              const data = await adminApi.getAllVerifications(page.verifications, 20, {
-                start_date: dateRange.start || undefined,
-                end_date: dateRange.end || undefined
-              });
-              setVerifications(data);
-            } else {
-              setVerifications(mockVerifications);
-            }
-          } catch (e) {
-            console.log('Using mock verifications data');
-            setVerifications(mockVerifications);
-          }
-        } else if (activeTab === 'payments') {
-          try {
-            let paymentsData = { payments: [], total: 0 };
-            let statsData = null;
-            
-            if (adminApi.getAllPayments && paymentApi.getPaymentStats) {
-              [paymentsData, statsData] = await Promise.all([
-                adminApi.getAllPayments(page.payments, 20, {
-                  start_date: dateRange.start || undefined,
-                  end_date: dateRange.end || undefined
-                }),
-                paymentApi.getPaymentStats()
-              ]);
-            } else {
-              throw new Error('API functions not available');
-            }
-            setPayments(paymentsData);
-            setPaymentStats(statsData);
-          } catch (e) {
-            console.log('Using mock payments data');
-            setPayments(mockPayments);
-            setPaymentStats(mockPaymentStats);
-          }
-        } else if (activeTab === 'logs') {
-          try {
-            if (adminApi.getSystemLogs) {
-              const data = await adminApi.getSystemLogs(page.logs, 50);
-              setLogs(data);
-            } else {
-              setLogs(mockLogs);
-            }
-          } catch (e) {
-            console.log('Using mock logs data');
-            setLogs(mockLogs);
-          }
-        } else if (activeTab === 'invitations') {
-          try {
-            if (authApi.getAllInvitations) {
-              const data = await authApi.getAllInvitations();
-              setInvitations(Array.isArray(data) ? data : []);
-            } else {
-              setInvitations(mockInvitations);
-            }
-          } catch (e) {
-            console.log('Using mock invitations data');
-            setInvitations(mockInvitations);
-          }
-        }
-      } catch (error) {
-        console.error(`Failed to fetch ${activeTab}:`, error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchTabData();
-  }, [activeTab, page, userRoleFilter, userInstitutionFilter, userSearch, dateRange]);
-
-  const handleUpdateRole = async (userId, role) => {
-    try {
-      if (adminApi.updateUserRole) {
-        await adminApi.updateUserRole(userId, role);
-        setActionMsg('✅ Role updated successfully');
-      } else {
-        setActionMsg('✅ Role updated successfully (mock)');
-      }
-      
-      // Refresh users
-      if (adminApi.getAllUsers) {
-        const data = await adminApi.getAllUsers(page.users, 20, {
-          role: userRoleFilter === 'all' ? undefined : userRoleFilter,
-          institution: userInstitutionFilter || undefined,
-          q: userSearch || undefined
-        });
-        setUsers(data);
-      } else {
-        // Update mock data
-        setUsers(prev => ({
-          ...prev,
-          users: prev.users.map(u => 
-            u.id === userId ? { ...u, role } : u
-          )
-        }));
-      }
-    } catch (e) {
-      setActionMsg(`❌ ${e?.response?.data?.detail || 'Failed to update role'}`);
-    }
-    setTimeout(() => setActionMsg(''), 3000);
-  };
-
-  const handleApproveUser = async (userId, approve, role = 'verifier') => {
-    try {
-      if (adminApi.approveUser) {
-        await adminApi.approveUser({ user_id: userId, approve, role });
-        setActionMsg(`✅ User ${approve ? 'approved' : 'rejected'} successfully`);
-      } else {
-        setActionMsg(`✅ User ${approve ? 'approved' : 'rejected'} successfully (mock)`);
-      }
-      
-      // Refresh pending users
-      if (adminApi.getPendingUsers) {
-        const pendingData = await adminApi.getPendingUsers();
-        setPendingUsers(pendingData || []);
-      } else {
-        setPendingUsers(prev => prev.filter(u => u.id !== userId));
-      }
-      
-      // Refresh users list
-      if (adminApi.getAllUsers) {
-        const data = await adminApi.getAllUsers(page.users, 20, {
-          role: userRoleFilter === 'all' ? undefined : userRoleFilter,
-          institution: userInstitutionFilter || undefined,
-          q: userSearch || undefined
-        });
-        setUsers(data);
-      } else if (approve) {
-        // Add to mock users
-        const approvedUser = pendingUsers.find(u => u.id === userId);
-        if (approvedUser) {
-          setUsers(prev => ({
-            ...prev,
-            users: [...prev.users, {
-              id: userId,
-              username: approvedUser.username,
-              email: approvedUser.email,
-              role: role,
-              institution_code: null,
-              is_active: true,
-              last_login_at: null
-            }],
-            total: prev.total + 1
-          }));
-        }
-      }
-    } catch (e) {
-      setActionMsg(`❌ ${e?.response?.data?.detail || 'Failed to process user'}`);
-    }
-    setTimeout(() => setActionMsg(''), 3000);
-  };
-
-  const handleInvite = async (e) => {
-    e.preventDefault();
-    if (!inviteEmail.trim()) return;
-    
-    setInviteLoading(true);
-    setActionMsg('');
-    
-    try {
-      if (authApi.generateInvitation) {
-        const { link } = await authApi.generateInvitation({ 
-          email: inviteEmail.trim(), 
-          role: inviteRole 
-        });
-        setActionMsg(`✓ Invitation created! Share this link: ${link}`);
-      } else {
-        const mockLink = `https://certivert.com/invite/${Math.random().toString(36).substring(2, 10)}`;
-        setActionMsg(`✓ Invitation created! Share this link: ${mockLink} (mock)`);
-        
-        // Add to mock invitations
-        const newInvite = {
-          id: Date.now(),
-          email: inviteEmail.trim(),
-          role: inviteRole,
-          used: false,
-          created_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 604800000).toISOString(),
-          link: mockLink
-        };
-        setInvitations(prev => [...prev, newInvite]);
-      }
-      
-      setInviteEmail('');
-      
-      // Refresh invitations
-      if (authApi.getAllInvitations) {
-        const data = await authApi.getAllInvitations();
-        setInvitations(Array.isArray(data) ? data : []);
-      }
-    } catch (e) {
-      setActionMsg(`❌ ${e?.response?.data?.detail || 'Failed to create invite'}`);
-    }
-    
-    setInviteLoading(false);
-    setTimeout(() => setActionMsg(''), 5000);
-  };
-
-  const handleDeleteUser = async (userId) => {
-    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
-    
-    try {
-      if (adminApi.deleteUser) {
-        await adminApi.deleteUser(userId);
-        setActionMsg('✅ User deleted successfully');
-      } else {
-        setActionMsg('✅ User deleted successfully (mock)');
-      }
-      
-      // Refresh users
-      if (adminApi.getAllUsers) {
-        const data = await adminApi.getAllUsers(page.users, 20, {
-          role: userRoleFilter === 'all' ? undefined : userRoleFilter,
-          institution: userInstitutionFilter || undefined,
-          q: userSearch || undefined
-        });
-        setUsers(data);
-      } else {
-        setUsers(prev => ({
-          ...prev,
-          users: prev.users.filter(u => u.id !== userId),
-          total: prev.total - 1
-        }));
-      }
-    } catch (e) {
-      setActionMsg(`❌ ${e?.response?.data?.detail || 'Failed to delete user'}`);
-    }
-    setTimeout(() => setActionMsg(''), 3000);
-  };
-
-  const handleRevokeCertificate = async (certificateId) => {
-    if (!window.confirm('Are you sure you want to revoke this certificate?')) return;
-    
-    try {
-      if (adminApi.revokeCertificate) {
-        await adminApi.revokeCertificate(certificateId);
-        setActionMsg('✅ Certificate revoked successfully');
-      } else {
-        setActionMsg('✅ Certificate revoked successfully (mock)');
-      }
-      
-      // Refresh certificates
-      if (adminApi.getAllCertificates) {
-        const data = await adminApi.getAllCertificates(page.certificates, 20);
-        setCertificates(data);
-      } else {
-        setCertificates(prev => ({
-          ...prev,
-          certificates: prev.certificates.map(c => 
-            c.id === certificateId ? { ...c, status: 'revoked' } : c
-          )
-        }));
-      }
-    } catch (e) {
-      setActionMsg(`❌ ${e?.response?.data?.detail || 'Failed to revoke certificate'}`);
-    }
-    setTimeout(() => setActionMsg(''), 3000);
-  };
-
-  const handleLogout = async () => {
+  // Handle logout
+  const handleLogout = useCallback(async () => {
     try {
       await logout();
     } catch (error) {
       console.error('Logout failed:', error);
+      setError('Failed to logout');
     }
-  };
+  }, [logout]);
 
-  const getTabIcon = (tab) => {
-    switch(tab) {
-      case 'overview': return '📊';
-      case 'users': return '👥';
-      case 'certificates': return '📜';
-      case 'verifications': return '✓';
-      case 'payments': return '💰';
-      case 'invitations': return '📧';
-      case 'logs': return '📋';
-      default: return '•';
+  // Mark notification as read
+  const markAsRead = useCallback(async (notificationId) => {
+    try {
+      await adminApi.markNotificationRead(notificationId);
+      setNotifications(prev => 
+        prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Failed to mark notification as read:', error);
     }
-  };
+  }, []);
 
-  const getStatusColor = (status) => {
-    switch(status?.toLowerCase()) {
-      case 'confirmed':
-      case 'verified':
-      case 'success':
-        return 'bg-green-100 text-green-800';
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'failed':
-      case 'rejected':
-      case 'invalid':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+  // Mark all notifications as read
+  const markAllAsRead = useCallback(async () => {
+    try {
+      await adminApi.markAllNotificationsRead();
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+      setSuccess('All notifications marked as read');
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+      setError('Failed to mark notifications as read');
     }
-  };
+  }, []);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Never';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  // Export data
+  const handleExport = useCallback(async (format = 'csv') => {
+    try {
+      const data = await adminApi.exportData(activeTab, filters, dateRange);
+      const blob = new Blob([data], { 
+        type: format === 'csv' ? 'text/csv' : 'application/json' 
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${activeTab}_export_${format(new Date(), 'yyyy-MM-dd')}.${format}`;
+      a.click();
+      setSuccess('Data exported successfully');
+    } catch (error) {
+      console.error('Export failed:', error);
+      setError('Failed to export data');
+    }
+  }, [activeTab, filters, dateRange]);
 
-  const formatCurrency = (amount) => {
-    return `M${parseFloat(amount).toFixed(2)}`;
-  };
+  // Refresh current tab data
+  const refreshData = useCallback(async () => {
+    try {
+      setLoading(true);
+      
+      if (activeTab === 'overview') {
+        const [statsData, healthData, chartData] = await Promise.all([
+          adminApi.getSystemStats(),
+          adminApi.getSystemHealth(),
+          adminApi.getDashboardCharts(dateRange)
+        ]);
+        setStats(statsData);
+        setSystemHealth(healthData);
+        setChartData(chartData);
+      }
+      
+      setSuccess('Data refreshed successfully');
+    } catch (error) {
+      console.error('Refresh failed:', error);
+      setError('Failed to refresh data');
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab, dateRange]);
+
+  // Get status color
+  const getStatusColor = useCallback((status) => {
+    const colors = {
+      success: 'bg-green-100 text-green-800 border-green-200',
+      warning: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      error: 'bg-red-100 text-red-800 border-red-200',
+      info: 'bg-blue-100 text-blue-800 border-blue-200',
+      pending: 'bg-purple-100 text-purple-800 border-purple-200',
+      active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      inactive: 'bg-gray-100 text-gray-800 border-gray-200',
+      verified: 'bg-teal-100 text-teal-800 border-teal-200',
+      revoked: 'bg-rose-100 text-rose-800 border-rose-200'
+    };
+    return colors[status?.toLowerCase()] || colors.info;
+  }, []);
+
+  // Format currency
+  const formatCurrency = useCallback((amount) => {
+    return new Intl.NumberFormat('en-LS', {
+      style: 'currency',
+      currency: 'LSL',
+      minimumFractionDigits: 2
+    }).format(amount);
+  }, []);
+
+  // Format date
+  const formatDate = useCallback((date) => {
+    if (!date) return 'N/A';
+    return format(parseISO(date), 'MMM dd, yyyy HH:mm');
+  }, []);
+
+  // Calculate percentage change
+  const calculateChange = useCallback((current, previous) => {
+    if (!previous || previous === 0) return 100;
+    return ((current - previous) / previous) * 100;
+  }, []);
+
+  // Get change indicator
+  const getChangeIndicator = useCallback((current, previous) => {
+    const change = calculateChange(current, previous);
+    if (change > 0) {
+      return {
+        icon: FiTrendingUp,
+        color: 'text-green-600',
+        text: `+${change.toFixed(1)}%`
+      };
+    } else if (change < 0) {
+      return {
+        icon: FiTrendingDown,
+        color: 'text-red-600',
+        text: `${change.toFixed(1)}%`
+      };
+    }
+    return null;
+  }, [calculateChange]);
+
+  // Render overview tab
+  const renderOverview = () => (
+    <div className="space-y-6">
+      {/* Stats Cards */}
+      <AdminStats 
+        stats={stats}
+        loading={loading}
+        formatCurrency={formatCurrency}
+        getChangeIndicator={getChangeIndicator}
+      />
+
+      {/* System Health */}
+      <SystemHealth 
+        health={systemHealth}
+        alerts={recentAlerts}
+        loading={loading}
+      />
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AdminCharts 
+          data={chartData}
+          type="activity"
+          title="System Activity"
+          loading={loading}
+        />
+        <AdminCharts 
+          data={chartData}
+          type="payments"
+          title="Payment Trends"
+          loading={loading}
+        />
+      </div>
+
+      {/* Recent Activity & Quick Actions */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <RecentActivity limit={5} />
+        </div>
+        <div>
+          <QuickActions 
+            onAction={(action) => {
+              switch(action) {
+                case 'export':
+                  handleExport();
+                  break;
+                case 'refresh':
+                  refreshData();
+                  break;
+                case 'invite':
+                  setActiveTab('invitations');
+                  break;
+                default:
+                  break;
+              }
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Recent Alerts */}
+      {recentAlerts.length > 0 && (
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+          <div className="px-6 py-4 bg-gradient-to-r from-amber-500 to-orange-600">
+            <h3 className="text-lg font-semibold text-white flex items-center">
+              <FiAlertCircle className="mr-2" />
+              Recent Alerts
+            </h3>
+          </div>
+          <div className="divide-y divide-gray-200">
+            {recentAlerts.map((alert, index) => (
+              <motion.div
+                key={alert.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="p-4 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-start">
+                  <div className={`w-2 h-2 rounded-full mt-2 mr-3 ${
+                    alert.severity === 'high' ? 'bg-red-500 animate-pulse' :
+                    alert.severity === 'medium' ? 'bg-yellow-500' :
+                    'bg-blue-500'
+                  }`} />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">{alert.message}</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {formatDate(alert.timestamp)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {/* Handle alert action */}}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    View
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex">
-      {/* Modals */}
-      {showPreview && selectedCertificate && (
-        <CertificatePreview
-          certificate={selectedCertificate}
-          onClose={() => {
-            setShowPreview(false);
-            setSelectedCertificate(null);
-          }}
-          onRevoke={() => handleRevokeCertificate(selectedCertificate.id)}
-        />
-      )}
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 flex">
+        {/* Theme Customizer Modal */}
+        {/* <AnimatePresence>
+          {showThemeCustomizer && (
+            <ThemeCustomizer
+              theme={theme}
+              onClose={() => setShowThemeCustomizer(false)}
+              onThemeChange={setTheme}
+            />
+          )}
+        </AnimatePresence> */}
 
-      {showPaymentDetails && selectedPayment && (
-        <PaymentDetails
-          payment={selectedPayment}
-          onClose={() => {
-            setShowPaymentDetails(false);
-            setSelectedPayment(null);
-          }}
-        />
-      )}
+      {/* Notifications Panel */}
+      <AnimatePresence>
+        {showNotifications && (
+          <NotificationCenter
+            notifications={notifications}
+            unreadCount={unreadCount}
+            onClose={() => setShowNotifications(false)}
+            onMarkRead={markAsRead}
+            onMarkAllRead={markAllAsRead}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Left Sidebar */}
-      <div className={`${sidebarCollapsed ? 'w-20' : 'w-80'} bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white transition-all duration-300 shadow-2xl flex flex-col relative`}>
+      <motion.div
+        initial={false}
+        animate={{ width: sidebarCollapsed ? 80 : 280 }}
+        className="bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white shadow-2xl flex flex-col relative z-20"
+      >
         {/* Logo Area */}
         <div className="p-6 border-b border-gray-700/50">
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl blur-lg opacity-50 animate-pulse"></div>
-              <div className="relative bg-gradient-to-r from-purple-500 to-blue-500 p-3 rounded-xl shadow-lg transform hover:scale-105 transition-transform duration-300">
-                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
+          <motion.div 
+            className="flex items-center space-x-4"
+            layout
+          >
+            <motion.div 
+              className="relative"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl blur-lg opacity-50 animate-pulse" />
+              <div className="relative bg-gradient-to-r from-purple-500 to-blue-500 p-3 rounded-xl shadow-lg">
+                <FiShield className="w-8 h-8 text-white" />
               </div>
-            </div>
-            {!sidebarCollapsed && (
-              <div className="animate-fadeIn">
-                <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">CertiVert</span>
-                <span className="block text-xs text-gray-400 mt-1">Admin Portal</span>
-              </div>
-            )}
-          </div>
+            </motion.div>
+            
+            <AnimatePresence>
+              {!sidebarCollapsed && (
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="overflow-hidden"
+                >
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+                    CertiVert
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-1">Admin Portal</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </div>
 
         {/* Admin Profile */}
         <div className="p-6 border-b border-gray-700/50">
-          <div className="flex items-center space-x-4">
-            <div className="relative">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-xl shadow-lg transform hover:scale-105 transition-transform">
+          <motion.div 
+            className="flex items-center space-x-4"
+            layout
+          >
+            <motion.div 
+              className="relative"
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+            >
+              <div className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-xl shadow-lg">
                 {user?.username?.charAt(0).toUpperCase() || 'A'}
               </div>
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-green-500 border-2 border-gray-800 rounded-full animate-pulse"></div>
-            </div>
-            {!sidebarCollapsed && (
-              <div className="flex-1">
-                <p className="font-semibold text-lg">{user?.username || 'Admin'}</p>
-                <p className="text-xs text-gray-400 truncate">{user?.email || 'admin@certivert.com'}</p>
-                <span className="inline-block mt-2 px-3 py-1 bg-purple-600/30 text-purple-300 rounded-full text-xs font-medium">
-                  SUPER ADMIN
-                </span>
-              </div>
-            )}
-          </div>
+              <motion.div 
+                className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-gray-800 rounded-full"
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ repeat: Infinity, duration: 2 }}
+              />
+            </motion.div>
+            
+            <AnimatePresence>
+              {!sidebarCollapsed && (
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="flex-1 overflow-hidden"
+                >
+                  <p className="font-semibold text-lg truncate">{user?.username || 'Admin'}</p>
+                  <p className="text-xs text-gray-400 truncate">{user?.email || 'admin@certivert.com'}</p>
+                  <motion.span 
+                    className="inline-block mt-2 px-3 py-1 bg-purple-600/30 text-purple-300 rounded-full text-xs font-medium"
+                    whileHover={{ scale: 1.05 }}
+                  >
+                    SUPER ADMIN
+                  </motion.span>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </div>
 
-        {/* Quick Stats */}
-        {!sidebarCollapsed && stats && (
+        {/* Quick Stats (collapsed mode) */}
+        {sidebarCollapsed && stats && (
           <div className="p-4 border-b border-gray-700/50">
-            <h4 className="text-xs uppercase tracking-wider text-gray-400 mb-3 flex items-center">
-              <span className="w-1 h-4 bg-purple-500 rounded-full mr-2"></span>
-              System Health
-            </h4>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-gray-800/50 rounded-lg p-3">
-                <p className="text-xs text-gray-400">Users</p>
-                <p className="text-xl font-bold text-purple-400">{stats.total_users}</p>
+            <div className="space-y-3">
+              <div className="text-center">
+                <div className="w-8 h-8 mx-auto bg-purple-600/30 rounded-lg flex items-center justify-center">
+                  <FiUsers className="text-purple-400" />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{stats.total_users}</p>
               </div>
-              <div className="bg-gray-800/50 rounded-lg p-3">
-                <p className="text-xs text-gray-400">Certificates</p>
-                <p className="text-xl font-bold text-blue-400">{stats.total_certificates}</p>
-              </div>
-              <div className="bg-gray-800/50 rounded-lg p-3">
-                <p className="text-xs text-gray-400">Payments</p>
-                <p className="text-xl font-bold text-green-400">{stats.total_payments}</p>
-              </div>
-              <div className="bg-gray-800/50 rounded-lg p-3">
-                <p className="text-xs text-gray-400">Pending</p>
-                <p className="text-xl font-bold text-yellow-400">{pendingUsers.length}</p>
+              <div className="text-center">
+                <div className="w-8 h-8 mx-auto bg-blue-600/30 rounded-lg flex items-center justify-center">
+                  <FiFileText className="text-blue-400" />
+                </div>
+                <p className="text-xs text-gray-400 mt-1">{stats.total_certificates}</p>
               </div>
             </div>
           </div>
@@ -613,1033 +551,527 @@ const AdminDashboard = () => {
 
         {/* Navigation Tabs */}
         <nav className="flex-1 overflow-y-auto py-6 px-3">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 mb-1 relative group ${
-                activeTab === tab 
-                  ? 'bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg transform scale-105' 
-                  : 'text-gray-300 hover:bg-gray-700/50 hover:text-white'
-              }`}
-            >
-              <span className="text-xl">{getTabIcon(tab)}</span>
-              {!sidebarCollapsed && (
-                <>
-                  <span className="font-medium capitalize">{tab}</span>
-                  {activeTab === tab && (
-                    <span className="absolute right-3 w-2 h-2 bg-white rounded-full animate-ping"></span>
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            
+            return (
+              <motion.button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 mb-1 relative group ${
+                  isActive 
+                    ? `bg-gradient-to-r from-${tab.color}-600 to-${tab.color}-700 text-white shadow-lg` 
+                    : 'text-gray-300 hover:bg-gray-700/50 hover:text-white'
+                }`}
+                whileHover={{ scale: 1.02, x: 5 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-400 group-hover:text-white'}`} />
+                
+                <AnimatePresence>
+                  {!sidebarCollapsed && (
+                    <motion.span
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -10 }}
+                      className="font-medium capitalize flex-1 text-left"
+                    >
+                      {tab.label}
+                    </motion.span>
                   )}
-                </>
-              )}
-              {tab === 'users' && pendingUsers.length > 0 && !sidebarCollapsed && (
-                <span className="absolute right-3 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
-                  {pendingUsers.length}
-                </span>
-              )}
-            </button>
-          ))}
+                </AnimatePresence>
+
+                {isActive && !sidebarCollapsed && (
+                  <motion.div
+                    layoutId="activeTab"
+                    className="absolute right-3 w-2 h-2 bg-white rounded-full"
+                    animate={{ scale: [1, 1.5, 1] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                  />
+                )}
+
+                {tab.id === 'users' && pendingUsers?.length > 0 && !sidebarCollapsed && (
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute right-3 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"
+                  >
+                    {pendingUsers.length}
+                  </motion.span>
+                )}
+              </motion.button>
+            );
+          })}
         </nav>
 
-        {/* Logout Section */}
-        <div className="p-6 border-t border-gray-700/50">
-          {!showLogoutConfirm ? (
-            <button
-              onClick={() => setShowLogoutConfirm(true)}
-              className="w-full flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-red-600/20 rounded-xl transition-all duration-200 group"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              {!sidebarCollapsed && <span className="font-medium">Logout</span>}
-            </button>
-          ) : (
-            <div className="bg-gray-800/50 rounded-xl p-4 animate-slideUp">
-              <p className="text-sm text-gray-300 text-center mb-3">Confirm logout?</p>
-              <div className="flex space-x-2">
-                <button
-                  onClick={handleLogout}
-                  className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white text-sm font-medium transition-colors"
-                >
-                  Yes
-                </button>
-                <button
-                  onClick={() => setShowLogoutConfirm(false)}
-                  className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white text-sm font-medium transition-colors"
-                >
-                  No
-                </button>
-              </div>
-            </div>
-          )}
-          
+        {/* Bottom Actions */}
+        <div className="p-6 border-t border-gray-700/50 space-y-2">
+          {/* Notifications */}
+          <motion.button
+            onClick={() => setShowNotifications(!showNotifications)}
+            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-700/50 rounded-xl transition-all relative group"
+            whileHover={{ scale: 1.02, x: 5 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <FiBell className="w-5 h-5" />
+            {!sidebarCollapsed && (
+              <span className="font-medium">Notifications</span>
+            )}
+            {unreadCount > 0 && (
+              <motion.span
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className={`${sidebarCollapsed ? 'absolute -top-1 -right-1' : 'absolute right-3'} bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center`}
+              >
+                {unreadCount}
+              </motion.span>
+            )}
+          </motion.button>
+
+          {/* Theme Customizer */}
+          {/* <motion.button
+            onClick={() => setShowThemeCustomizer(true)}
+            className="w-full flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-700/50 rounded-xl transition-all"
+            whileHover={{ scale: 1.02, x: 5 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <FiSettings className="w-5 h-5" />
+            {!sidebarCollapsed && <span className="font-medium">Customize</span>}
+          </motion.button>
+
+          {/* Logout */}
+          <AnimatePresence>
+            {!showLogoutConfirm ? (
+              <motion.button
+                onClick={() => setShowLogoutConfirm(true)}
+                className="w-full flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-red-600/20 rounded-xl transition-all"
+                whileHover={{ scale: 1.02, x: 5 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <FiLogOut className="w-5 h-5" />
+                {!sidebarCollapsed && <span className="font-medium">Logout</span>}
+              </motion.button>
+            ) : (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 10 }}
+                className="bg-gray-800/50 rounded-xl p-4"
+              >
+                <p className="text-sm text-gray-300 text-center mb-3">Confirm logout?</p>
+                <div className="flex space-x-2">
+                  <motion.button
+                    onClick={handleLogout}
+                    className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-white text-sm font-medium transition-colors"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Yes
+                  </motion.button>
+                  <motion.button
+                    onClick={() => setShowLogoutConfirm(false)}
+                    className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-white text-sm font-medium transition-colors"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    No
+                  </motion.button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Sidebar Toggle */}
-          <button
+          <motion.button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
             className="absolute bottom-6 -right-3 w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center text-white border-2 border-gray-700 hover:bg-gray-700 transition-colors shadow-lg"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
           >
-            {sidebarCollapsed ? '→' : '←'}
-          </button>
+            <FiMenu className={`w-4 h-4 transform transition-transform ${sidebarCollapsed ? 'rotate-180' : ''}`} />
+          </motion.button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-auto">
+      <motion.div 
+        className="flex-1 overflow-auto"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+      >
         {/* Top Bar */}
-        <div className="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-10 border-b border-gray-200">
-          <div className="px-8 py-4 flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800 capitalize">{activeTab} Dashboard</h1>
-              <p className="text-sm text-gray-500">Welcome back, {user?.username}! Here's what's happening.</p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold shadow-lg">
-                  {user?.username?.charAt(0).toUpperCase() || 'A'}
+        <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-md shadow-sm sticky top-0 z-10 border-b border-gray-200 dark:border-gray-700">
+          <div className="px-8 py-4">
+            <div className="flex justify-between items-center">
+              {/* Title and Breadcrumb */}
+              <div>
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-white capitalize flex items-center">
+                  {TABS.find(t => t.id === activeTab)?.label} Dashboard
+                  {loading && (
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                      className="ml-3"
+                    >
+                      <FiRefreshCw className="w-4 h-4 text-gray-400" />
+                    </motion.div>
+                  )}
+                </h1>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  Welcome back, {user?.username}! Here's what's happening with your system.
+                </p>
+              </div>
+
+              {/* Search and Actions */}
+              <div className="flex items-center space-x-4">
+                {/* Search Bar */}
+                <div className="relative">
+                  <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 pr-4 py-2 border-2 border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-purple-500 focus:ring focus:ring-purple-200 dark:focus:ring-purple-800 transition-all w-64"
+                  />
                 </div>
+
+                {/* Filter Button */}
+                <motion.button
+                  onClick={() => {/* Toggle filters */}}
+                  className="p-2 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors relative"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <FiFilter className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                  {Object.keys(filters).length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-purple-500 rounded-full" />
+                  )}
+                </motion.button>
+
+                {/* Export Button */}
+                <motion.button
+                  onClick={() => handleExport('csv')}
+                  className="p-2 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <FiDownload className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </motion.button>
+
+                {/* Refresh Button */}
+                <motion.button
+                  onClick={refreshData}
+                  className="p-2 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  animate={autoRefresh ? { rotate: [0, 360] } : {}}
+                  transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+                >
+                  <FiRefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </motion.button>
+
+                {/* Date Range Selector */}
+                <select
+                  value={`${dateRange.start}_${dateRange.end}`}
+                  onChange={(e) => {
+                    const [start, end] = e.target.value.split('_');
+                    setDateRange({ start, end });
+                  }}
+                  className="px-4 py-2 border-2 border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-purple-500 focus:ring focus:ring-purple-200 dark:focus:ring-purple-800 transition-all"
+                >
+                  <option value={`${format(subDays(new Date(), 7), 'yyyy-MM-dd')}_${format(new Date(), 'yyyy-MM-dd')}`}>Last 7 days</option>
+                  <option value={`${format(subDays(new Date(), 30), 'yyyy-MM-dd')}_${format(new Date(), 'yyyy-MM-dd')}`}>Last 30 days</option>
+                  <option value={`${format(subDays(new Date(), 90), 'yyyy-MM-dd')}_${format(new Date(), 'yyyy-MM-dd')}`}>Last 90 days</option>
+                  <option value={`2024-01-01_${format(new Date(), 'yyyy-MM-dd')}`}>Year to date</option>
+                </select>
+
+                {/* User Avatar */}
+                <motion.div
+                  className="relative cursor-pointer"
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                >
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold shadow-lg">
+                    {user?.username?.charAt(0).toUpperCase() || 'A'}
+                  </div>
+                  <motion.div 
+                    className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full"
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                  />
+                </motion.div>
               </div>
             </div>
+
+            {/* Active Filters */}
+            {Object.keys(filters).length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-4 flex items-center space-x-2"
+              >
+                <span className="text-sm text-gray-500 dark:text-gray-400">Active filters:</span>
+                {Object.entries(filters).map(([key, value]) => (
+                  <span
+                    key={key}
+                    className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+                  >
+                    {key}: {value}
+                    <button
+                      onClick={() => {
+                        const newFilters = { ...filters };
+                        delete newFilters[key];
+                        setFilters(newFilters);
+                      }}
+                      className="ml-2 hover:text-purple-600"
+                    >
+                      <FiX className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                <button
+                  onClick={() => setFilters({})}
+                  className="text-sm text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                >
+                  Clear all
+                </button>
+              </motion.div>
+            )}
           </div>
         </div>
 
-        {/* Action Message */}
-        {actionMsg && (
-          <div className="mx-8 mt-4 px-6 py-4 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg animate-slideDown flex items-center">
-            <span className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center mr-3">✓</span>
-            {actionMsg}
-          </div>
-        )}
+        {/* Action Messages */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mx-8 mt-4 px-6 py-4 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg flex items-center"
+            >
+              <FiAlertCircle className="w-5 h-5 mr-3" />
+              {error}
+              <button
+                onClick={() => setError('')}
+                className="ml-auto hover:text-white/80"
+              >
+                <FiX className="w-5 h-5" />
+              </button>
+            </motion.div>
+          )}
+
+          {success && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="mx-8 mt-4 px-6 py-4 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white shadow-lg flex items-center"
+            >
+              <FiCheck className="w-5 h-5 mr-3" />
+              {success}
+              <button
+                onClick={() => setSuccess('')}
+                className="ml-auto hover:text-white/80"
+              >
+                <FiX className="w-5 h-5" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Content Area */}
         <div className="p-8">
-          {/* Overview Tab */}
-          {activeTab === 'overview' && (
-            <>
-              {/* Stats Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-                <div className="bg-white rounded-2xl shadow-lg p-6 transform hover:scale-105 transition-all duration-300 border-l-4 border-purple-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-500 text-sm">Total Users</p>
-                      <p className="text-3xl font-bold text-gray-800">{stats?.total_users ?? 0}</p>
-                    </div>
-                    <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                      <span className="text-2xl">👥</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-2">Registered users</p>
-                </div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Overview Tab */}
+              {activeTab === 'overview' && renderOverview()}
 
-                <div className="bg-white rounded-2xl shadow-lg p-6 transform hover:scale-105 transition-all duration-300 border-l-4 border-blue-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-500 text-sm">Certificates</p>
-                      <p className="text-3xl font-bold text-gray-800">{stats?.total_certificates ?? 0}</p>
-                    </div>
-                    <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                      <span className="text-2xl">📜</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-2">Certificates issued</p>
-                </div>
-
-                <div className="bg-white rounded-2xl shadow-lg p-6 transform hover:scale-105 transition-all duration-300 border-l-4 border-green-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-500 text-sm">Verifications</p>
-                      <p className="text-3xl font-bold text-gray-800">{stats?.total_verifications ?? 0}</p>
-                    </div>
-                    <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                      <span className="text-2xl">✓</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Valid: {stats?.valid_verifications ?? 0} | Invalid: {stats?.invalid_verifications ?? 0}
-                  </p>
-                </div>
-
-                <div className="bg-white rounded-2xl shadow-lg p-6 transform hover:scale-105 transition-all duration-300 border-l-4 border-yellow-500">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-gray-500 text-sm">Payments</p>
-                      <p className="text-3xl font-bold text-gray-800">{stats?.total_payments ?? 0}</p>
-                    </div>
-                    <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
-                      <span className="text-2xl">💰</span>
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-2">Total: {formatCurrency(stats?.total_payment_amount || 0)}</p>
-                </div>
-              </div>
-
-              {/* Pending Approvals */}
-              {pendingUsers.length > 0 && (
-                <div className="bg-white rounded-2xl shadow-lg overflow-hidden mb-6">
-                  <div className="px-6 py-4 bg-gradient-to-r from-yellow-500 to-orange-600 flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-white flex items-center">
-                      <span className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></span>
-                      Pending Approvals ({pendingUsers.length})
-                    </h3>
-                  </div>
-                  <div className="p-6">
-                    <div className="space-y-4">
-                      {pendingUsers.map((user) => (
-                        <div key={user.id} className="bg-gray-50 rounded-xl p-4 flex items-center justify-between hover:shadow-md transition-shadow">
-                          <div className="flex items-center space-x-4">
-                            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-yellow-500 to-orange-500 flex items-center justify-center text-white font-bold">
-                              {user.username?.charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <p className="font-medium text-gray-800">{user.username}</p>
-                              <p className="text-sm text-gray-500">{user.email}</p>
-                              <p className="text-xs text-gray-400 mt-1">Requested: {formatDate(user.created_at)}</p>
-                            </div>
-                          </div>
-                          <div className="flex space-x-3">
-                            <select
-                              onChange={(e) => handleApproveUser(user.id, true, e.target.value)}
-                              className="px-3 py-2 border-2 border-green-200 rounded-lg text-sm focus:border-green-500 focus:ring focus:ring-green-200"
-                              defaultValue=""
-                            >
-                              <option value="" disabled>Approve as...</option>
-                              <option value="verifier">Verifier</option>
-                              <option value="issuer">Issuer</option>
-                              <option value="admin">Admin</option>
-                            </select>
-                            <button
-                              onClick={() => handleApproveUser(user.id, false)}
-                              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+              {/* Blockchain Tab */}
+              {activeTab === 'blockchain' && (
+                <BlockchainVisualization 
+                  data={chartData?.blockchain}
+                  onAction={(action) => console.log('Blockchain action:', action)}
+                />
               )}
 
-              {/* Recent Activity */}
-              <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                <div className="px-6 py-4 bg-gradient-to-r from-purple-500 to-blue-600">
-                  <h3 className="text-lg font-semibold text-white">Live System Activity</h3>
-                </div>
-                <div className="p-6">
-                  <RecentActivity limit={8} />
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Users Tab */}
-          {activeTab === 'users' && (
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-blue-500 to-blue-600">
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                  <h3 className="text-lg font-semibold text-white flex items-center">
-                    <span className="w-2 h-2 bg-white rounded-full mr-2"></span>
-                    Users Management ({users.total})
-                  </h3>
-                  <div className="flex flex-wrap gap-3">
-                    <select
-                      value={userRoleFilter}
-                      onChange={(e) => { setPage((p) => ({ ...p, users: 1 })); setUserRoleFilter(e.target.value); }}
-                      className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white placeholder:text-blue-100 focus:outline-none focus:ring-2 focus:ring-white/40"
-                    >
-                      <option value="all">All roles</option>
-                      <option value="admin">Admin</option>
-                      <option value="issuer">Issuer</option>
-                      <option value="verifier">Verifier</option>
-                      <option value="pending">Pending</option>
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Filter by institution..."
-                      value={userInstitutionFilter}
-                      onChange={(e) => { setPage((p) => ({ ...p, users: 1 })); setUserInstitutionFilter(e.target.value); }}
-                      className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white placeholder:text-blue-100 focus:outline-none focus:ring-2 focus:ring-white/40"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Search users..."
-                      value={userSearch}
-                      onChange={(e) => { setPage((p) => ({ ...p, users: 1 })); setUserSearch(e.target.value); }}
-                      className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white placeholder:text-blue-100 focus:outline-none focus:ring-2 focus:ring-white/40"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              {loading ? (
-                <div className="p-12 text-center">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
-                  <p className="text-gray-500 mt-2">Loading users...</p>
-                </div>
-              ) : (
-                <>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Institution</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {(users.users || []).map((u, index) => (
-                          <tr key={u.id} className="hover:bg-gray-50 transition-colors animate-fadeIn" style={{ animationDelay: `${index * 50}ms` }}>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center">
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center text-white font-bold mr-3">
-                                  {u.username?.charAt(0).toUpperCase()}
-                                </div>
-                                <span className="text-sm font-medium text-gray-900">{u.username}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{u.email}</td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <select 
-                                value={u.role} 
-                                onChange={(e) => handleUpdateRole(u.id, e.target.value)}
-                                className={`text-sm border-2 rounded-lg px-3 py-1.5 focus:ring-2 transition-all ${
-                                  u.role === 'admin' ? 'border-purple-300 bg-purple-50' :
-                                  u.role === 'issuer' ? 'border-green-300 bg-green-50' :
-                                  u.role === 'verifier' ? 'border-blue-300 bg-blue-50' :
-                                  'border-yellow-300 bg-yellow-50'
-                                }`}
-                              >
-                                <option value="admin">Admin</option>
-                                <option value="issuer">Issuer</option>
-                                <option value="verifier">Verifier</option>
-                                <option value="pending">Pending</option>
-                              </select>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {u.institution_code || '-'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                                u.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                              }`}>
-                                <span className={`w-2 h-2 rounded-full mr-1 ${u.is_active ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                                {u.is_active ? 'Active' : 'Inactive'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {u.last_login_at ? formatDate(u.last_login_at) : 'Never'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              {u.id !== user?.id && (
-                                <button 
-                                  onClick={() => handleDeleteUser(u.id)}
-                                  className="text-red-600 hover:text-red-800 font-medium hover:underline"
-                                >
-                                  Delete
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Pagination */}
-                  {users.total > 20 && (
-                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                      <button
-                        disabled={page.users <= 1}
-                        onClick={() => setPage((p) => ({ ...p, users: p.users - 1 }))}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Previous
-                      </button>
-                      <span className="text-sm text-gray-700">
-                        Page <span className="font-medium">{page.users}</span> of <span className="font-medium">{Math.ceil(users.total / 20)}</span>
-                      </span>
-                      <button
-                        disabled={page.users * 20 >= users.total}
-                        onClick={() => setPage((p) => ({ ...p, users: p.users + 1 }))}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Certificates Tab */}
-          {activeTab === 'certificates' && (
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-green-500 to-green-600">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-white">Certificates ({certificates.total})</h3>
-                  <div className="flex gap-3">
-                    <input
-                      type="date"
-                      value={dateRange.start}
-                      onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-                      className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white placeholder:text-green-100"
-                      placeholder="Start date"
-                    />
-                    <input
-                      type="date"
-                      value={dateRange.end}
-                      onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-                      className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white placeholder:text-green-100"
-                      placeholder="End date"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              {loading ? (
-                <div className="p-12 text-center">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-green-500 border-t-transparent"></div>
-                  <p className="text-gray-500 mt-2">Loading certificates...</p>
-                </div>
-              ) : (
-                <>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Certificate</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Student</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issuer</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Issue Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Blockchain</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {(certificates.certificates || []).map((c, index) => (
-                          <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col">
-                                <span className="text-xs text-gray-500">ID: {c.id}</span>
-                                <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded mt-1">
-                                  {c.certificate_hash?.slice(0, 20)}...
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-medium text-gray-900">{c.student_name}</div>
-                              <div className="text-xs text-gray-500">ID: {c.student_id}</div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{c.issuer_code}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {formatDate(c.issue_date)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                c.status === 'verified' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                              }`}>
-                                {c.status}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              {c.blockchain_tx_id ? (
-                                <div className="flex flex-col">
-                                  <span className="text-xs font-mono bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                    {String(c.blockchain_tx_id).slice(0, 12)}...
-                                  </span>
-                                  <span className="text-xs text-gray-400 mt-1">{c.blockchain_network}</span>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-gray-400">Not on blockchain</span>
-                              )}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm">
-                              <button
-                                onClick={() => {
-                                  setSelectedCertificate(c);
-                                  setShowPreview(true);
-                                }}
-                                className="text-blue-600 hover:text-blue-800 font-medium mr-3"
-                              >
-                                View
-                              </button>
-                              <button
-                                onClick={() => handleRevokeCertificate(c.id)}
-                                className="text-red-600 hover:text-red-800 font-medium"
-                              >
-                                Revoke
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Pagination */}
-                  {certificates.total > 20 && (
-                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                      <button
-                        disabled={page.certificates <= 1}
-                        onClick={() => setPage((p) => ({ ...p, certificates: p.certificates - 1 }))}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Previous
-                      </button>
-                      <span className="text-sm text-gray-700">
-                        Page {page.certificates} of {Math.ceil(certificates.total / 20)}
-                      </span>
-                      <button
-                        disabled={page.certificates * 20 >= certificates.total}
-                        onClick={() => setPage((p) => ({ ...p, certificates: p.certificates + 1 }))}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Verifications Tab */}
-          {activeTab === 'verifications' && (
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-indigo-500 to-indigo-600">
-                <div className="flex justify-between items-center">
-                  <h3 className="text-lg font-semibold text-white">Verifications ({verifications.total})</h3>
-                  <div className="flex gap-3">
-                    <input
-                      type="date"
-                      value={dateRange.start}
-                      onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-                      className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white"
-                    />
-                    <input
-                      type="date"
-                      value={dateRange.end}
-                      onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-                      className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white"
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              {loading ? (
-                <div className="p-12 text-center">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-indigo-500 border-t-transparent"></div>
-                  <p className="text-gray-500 mt-2">Loading verifications...</p>
-                </div>
-              ) : (
-                <>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Certificate</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Verifier</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Result</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Blockchain</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Payment</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fee</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {(verifications.verifications || []).map((v, index) => (
-                          <tr key={v.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {formatDate(v.verification_date)}
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col">
-                                <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">
-                                  {v.certificate_hash?.slice(0, 20)}...
-                                </span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {v.verifier_name || v.verifier_id}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                v.result === 'verified' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                              }`}>
-                                {v.result}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`text-xs font-medium ${v.blockchain_match ? 'text-green-600' : 'text-red-600'}`}>
-                                {v.blockchain_match ? '✓ Match' : '✗ No match'}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="flex items-center">
-                                <span className="text-lg mr-1">
-                                  {v.payment_method === 'mpesa_lesotho' ? '📱' : 
-                                   v.payment_method === 'mpesa' ? '📱' :
-                                   v.payment_method === 'ecocash' ? '📲' : '🏦'}
-                                </span>
-                                <span className="text-sm text-gray-600">{v.payment_method?.replace('_', ' ')}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-green-600">
-                              {formatCurrency(v.verification_fee || 5.00)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Pagination */}
-                  {verifications.total > 20 && (
-                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                      <button
-                        disabled={page.verifications <= 1}
-                        onClick={() => setPage((p) => ({ ...p, verifications: p.verifications - 1 }))}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Previous
-                      </button>
-                      <span className="text-sm text-gray-700">
-                        Page {page.verifications} of {Math.ceil(verifications.total / 20)}
-                      </span>
-                      <button
-                        disabled={page.verifications * 20 >= verifications.total}
-                        onClick={() => setPage((p) => ({ ...p, verifications: p.verifications + 1 }))}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Payments Tab */}
-          {activeTab === 'payments' && (
-            <div className="space-y-6">
-              {/* Payment Stats */}
-              {paymentStats && (
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  <div className="bg-white rounded-2xl shadow-lg p-6">
-                    <p className="text-sm text-gray-500">Total Payments</p>
-                    <p className="text-2xl font-bold text-gray-800">{paymentStats.total_payments}</p>
-                  </div>
-                  <div className="bg-white rounded-2xl shadow-lg p-6">
-                    <p className="text-sm text-gray-500">Total Amount</p>
-                    <p className="text-2xl font-bold text-green-600">{formatCurrency(paymentStats.total_amount)}</p>
-                  </div>
-                  <div className="bg-white rounded-2xl shadow-lg p-6">
-                    <p className="text-sm text-gray-500">Confirmed</p>
-                    <p className="text-2xl font-bold text-green-600">{paymentStats.confirmed_payments}</p>
-                  </div>
-                  <div className="bg-white rounded-2xl shadow-lg p-6">
-                    <p className="text-sm text-gray-500">Pending</p>
-                    <p className="text-2xl font-bold text-yellow-600">{paymentStats.pending_payments}</p>
-                  </div>
-                </div>
+              {/* Network Monitor Tab */}
+              {activeTab === 'network' && (
+                <NetworkMonitor 
+                  onAlert={(alert) => setRecentAlerts(prev => [alert, ...prev].slice(0, 10))}
+                />
               )}
 
-              <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-                <div className="px-6 py-4 bg-gradient-to-r from-green-500 to-green-600">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold text-white">Payment Transactions ({payments.total})</h3>
-                    <div className="flex gap-3">
-                      <input
-                        type="date"
-                        value={dateRange.start}
-                        onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
-                        className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white"
-                      />
-                      <input
-                        type="date"
-                        value={dateRange.end}
-                        onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
-                        className="text-sm border-0 rounded-lg px-3 py-2 bg-white/10 text-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-                
-                {loading ? (
-                  <div className="p-12 text-center">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-green-500 border-t-transparent"></div>
-                    <p className="text-gray-500 mt-2">Loading payments...</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full divide-y divide-gray-200">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Method</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Reference</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">M-Pesa ID</th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {(payments.payments || []).map((p, index) => (
-                            <tr key={p.id} className="hover:bg-gray-50 transition-colors">
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {formatDate(p.created_at)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center">
-                                  <div className="w-8 h-8 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center text-white text-xs font-bold mr-2">
-                                    {p.user_name?.charAt(0).toUpperCase()}
-                                  </div>
-                                  <span className="text-sm font-medium text-gray-900">{p.user_name}</span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {formatCurrency(p.amount)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center">
-                                  <span className="text-lg mr-1">
-                                    {p.method === 'mpesa_lesotho' ? '📱' : 
-                                     p.method === 'mpesa' ? '📱' :
-                                     p.method === 'ecocash' ? '📲' : '🏦'}
-                                  </span>
-                                  <span className="text-sm text-gray-600">{p.method?.replace('_', ' ')}</span>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {p.reference || '-'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                  p.status === 'CONFIRMED' ? 'bg-green-100 text-green-800' :
-                                  p.status === 'PENDING' ? 'bg-yellow-100 text-yellow-800' :
-                                  'bg-red-100 text-red-800'
-                                }`}>
-                                  {p.status}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-gray-500">
-                                {p.mpesa_transaction_id || '-'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                <button
-                                  onClick={() => {
-                                    setSelectedPayment(p);
-                                    setShowPaymentDetails(true);
-                                  }}
-                                  className="text-blue-600 hover:text-blue-800 font-medium"
-                                >
-                                  Details
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    
-                    {/* Pagination */}
-                    {payments.total > 20 && (
-                      <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                        <button
-                          disabled={page.payments <= 1}
-                          onClick={() => setPage((p) => ({ ...p, payments: p.payments - 1 }))}
-                          className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          Previous
-                        </button>
-                        <span className="text-sm text-gray-700">
-                          Page {page.payments} of {Math.ceil(payments.total / 20)}
-                        </span>
-                        <button
-                          disabled={page.payments * 20 >= payments.total}
-                          onClick={() => setPage((p) => ({ ...p, payments: p.payments + 1 }))}
-                          className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          Next
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Invitations Tab */}
-          {activeTab === 'invitations' && (
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-orange-600">
-                <h3 className="text-lg font-semibold text-white">Invitations ({invitations.length})</h3>
-              </div>
-              
-              {/* Invite Form */}
-              <div className="p-6 bg-gray-50 border-b border-gray-200">
-                <form onSubmit={handleInvite} className="flex gap-4 flex-wrap items-end">
-                  <div className="flex-1 min-w-[200px]">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                    <input
-                      type="email"
-                      placeholder="user@example.com"
-                      value={inviteEmail}
-                      onChange={(e) => setInviteEmail(e.target.value)}
-                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-orange-500 focus:ring focus:ring-orange-200 transition-all"
-                      required
-                    />
-                  </div>
-                  <div className="w-48">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                    <select
-                      value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value)}
-                      className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:border-orange-500 focus:ring focus:ring-orange-200 transition-all"
-                    >
-                      <option value="verifier">Verifier</option>
-                      <option value="issuer">Issuer</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={inviteLoading}
-                    className="px-6 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-105"
-                  >
-                    {inviteLoading ? (
-                      <span className="flex items-center">
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Sending...
-                      </span>
-                    ) : 'Send Invitation'}
-                  </button>
-                </form>
-              </div>
-
-              {/* Invitations Table */}
-              {loading ? (
-                <div className="p-12 text-center">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-orange-500 border-t-transparent"></div>
-                  <p className="text-gray-500 mt-2">Loading invitations...</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Expires</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invitation Link</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {invitations.map((i, index) => (
-                        <tr key={i.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{i.email}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              i.role === 'issuer' ? 'bg-green-100 text-green-800' : 
-                              i.role === 'admin' ? 'bg-purple-100 text-purple-800' :
-                              'bg-blue-100 text-blue-800'
-                            }`}>
-                              {i.role}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                              i.used 
-                                ? 'bg-gray-100 text-gray-800' 
-                                : 'bg-green-100 text-green-800'
-                            }`}>
-                              <span className={`w-2 h-2 rounded-full mr-1 ${i.used ? 'bg-gray-400' : 'bg-green-400 animate-pulse'}`}></span>
-                              {i.used ? 'Used' : 'Pending'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {formatDate(i.created_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {formatDate(i.expires_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {!i.used && (
-                              <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(i.link);
-                                  setActionMsg('✅ Link copied to clipboard!');
-                                  setTimeout(() => setActionMsg(''), 2000);
-                                }}
-                                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-                              >
-                                Copy Link
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              {/* Education Tab */}
+              {activeTab === 'education' && (
+                <BlockchainEducation 
+                  userRole="admin"
+                  onComplete={(module) => console.log('Completed module:', module)}
+                />
               )}
-            </div>
-          )}
 
-          {/* Logs Tab */}
-          {activeTab === 'logs' && (
-            <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
-              <div className="px-6 py-4 bg-gradient-to-r from-gray-700 to-gray-800">
-                <h3 className="text-lg font-semibold text-white">System Audit Logs ({logs.total})</h3>
-              </div>
-              
-              {loading ? (
-                <div className="p-12 text-center">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-gray-700 border-t-transparent"></div>
-                  <p className="text-gray-500 mt-2">Loading logs...</p>
-                </div>
-              ) : (
-                <>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Event Type</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actor</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {(logs.logs || []).map((log, index) => (
-                          <tr key={log.id} className="hover:bg-gray-50 transition-colors">
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {formatDate(log.created_at)}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                                log.event_type.includes('success') || log.event_type.includes('approved') ? 'bg-green-100 text-green-800' :
-                                log.event_type.includes('error') || log.event_type.includes('failed') || log.event_type.includes('rejected') ? 'bg-red-100 text-red-800' :
-                                log.event_type.includes('pending') ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-blue-100 text-blue-800'
-                              }`}>
-                                {log.event_type}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {log.actor_user_id || 'System'}
-                              {log.actor_role && <span className="text-xs text-gray-500 ml-1">({log.actor_role})</span>}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {log.target_user_id || log.certificate_hash || '-'}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500 max-w-md">
-                              <div className="truncate">
-                                {JSON.stringify(log.payload)}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {/* Pagination */}
-                  {logs.total > 50 && (
-                    <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                      <button
-                        disabled={page.logs <= 1}
-                        onClick={() => setPage((p) => ({ ...p, logs: p.logs - 1 }))}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Previous
-                      </button>
-                      <span className="text-sm text-gray-700">
-                        Page {page.logs} of {Math.ceil(logs.total / 50)}
-                      </span>
-                      <button
-                        disabled={page.logs * 50 >= logs.total}
-                        onClick={() => setPage((p) => ({ ...p, logs: p.logs + 1 }))}
-                        className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
-                </>
+              {/* Users Tab */}
+              {activeTab === 'users' && (
+                <UserManagement
+                  filters={filters}
+                  searchQuery={searchQuery}
+                  dateRange={dateRange}
+                  onAction={(action, data) => {
+                    switch(action) {
+                      case 'edit':
+                        // Handle edit
+                        break;
+                      case 'delete':
+                        // Handle delete
+                        break;
+                      case 'approve':
+                        // Handle approve
+                        break;
+                      case 'reject':
+                        // Handle reject
+                        break;
+                      default:
+                        break;
+                    }
+                  }}
+                />
               )}
-            </div>
-          )}
+
+              {/* Certificates Tab */}
+              {activeTab === 'certificates' && (
+                <CertificateManagement
+                  filters={filters}
+                  searchQuery={searchQuery}
+                  dateRange={dateRange}
+                  onAction={(action, data) => {
+                    switch(action) {
+                      case 'view':
+                        setSelectedCertificate(data);
+                        setShowPreview(true);
+                        break;
+                      case 'revoke':
+                        handleRevokeCertificate(data.id);
+                        break;
+                      case 'verify':
+                        // Handle verify
+                        break;
+                      default:
+                        break;
+                    }
+                  }}
+                />
+              )}
+
+              {/* Verifications Tab */}
+              {activeTab === 'verifications' && (
+                <VerificationManagement
+                  filters={filters}
+                  searchQuery={searchQuery}
+                  dateRange={dateRange}
+                  onAction={(action, data) => {
+                    switch(action) {
+                      case 'view':
+                        // Handle view
+                        break;
+                      case 'export':
+                        handleExport('csv');
+                        break;
+                      default:
+                        break;
+                    }
+                  }}
+                />
+              )}
+
+              {/* Payments Tab */}
+              {activeTab === 'payments' && (
+                <PaymentManagement
+                  filters={filters}
+                  searchQuery={searchQuery}
+                  dateRange={dateRange}
+                  formatCurrency={formatCurrency}
+                  onAction={(action, data) => {
+                    switch(action) {
+                      case 'view':
+                        setSelectedPayment(data);
+                        setShowPaymentDetails(true);
+                        break;
+                      case 'refund':
+                        // Handle refund
+                        break;
+                      case 'export':
+                        handleExport('csv');
+                        break;
+                      default:
+                        break;
+                    }
+                  }}
+                />
+              )}
+
+              {/* Invitations Tab */}
+              {activeTab === 'invitations' && (
+                <div className="p-6 text-center text-gray-500">
+                  <p>Invitation Management component not available</p>
+                </div>
+                // <InvitationManagement
+                //   filters={filters}
+                //   searchQuery={searchQuery}
+                //   onInvite={(email, role) => {
+                //     // Handle invite
+                //     console.log('Invite:', email, role);
+                //   }}
+                //   onCopy={(link) => {
+                //     navigator.clipboard.writeText(link);
+                //     setSuccess('Link copied to clipboard!');
+                //   }}
+                // />
+              )}
+
+              {/* Logs Tab */}
+              {activeTab === 'logs' && (
+                <div className="p-6 text-center text-gray-500">
+                  <p>Log Viewer component not available</p>
+                </div>
+                // <LogViewer
+                //   filters={filters}
+                //   dateRange={dateRange}
+                //   onExport={handleExport}
+                // />
+              )}
+            </motion.div>
+          </AnimatePresence>
         </div>
-      </div>
+      </motion.div>
 
-      {/* Animations */}
-      <style jsx>{`
-        @keyframes slideDown {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        
-        .animate-slideDown {
-          animation: slideDown 0.3s ease-out;
-        }
-        
-        .animate-slideUp {
-          animation: slideUp 0.3s ease-out;
-        }
-        
-        .animate-fadeIn {
-          opacity: 0;
-          animation: fadeIn 0.5s ease-out forwards;
-        }
-      `}</style>
+      {/* Floating Action Button */}
+      <motion.button
+        className="fixed bottom-8 right-8 w-14 h-14 bg-gradient-to-r from-purple-600 to-blue-600 rounded-full shadow-2xl flex items-center justify-center text-white z-30"
+        whileHover={{ scale: 1.1, rotate: 90 }}
+        whileTap={{ scale: 0.9 }}
+        animate={{ 
+          boxShadow: [
+            '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
+            '0 25px 50px -12px rgba(0,0,0,0.25)',
+            '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)'
+          ]
+        }}
+        transition={{ repeat: Infinity, duration: 2 }}
+        onClick={() => {
+          // Quick action menu
+          console.log('FAB clicked');
+        }}
+      >
+        <FiPlus className="w-6 h-6" />
+      </motion.button>
     </div>
   );
 };

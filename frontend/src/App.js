@@ -8,6 +8,7 @@ import Demo from './pages/Demo';
 import Contact from './pages/Contact';
 import OCRProcessor from './pages/OCRProcessor';
 import MpesaPayment from './pages/MpesaPayment';
+import VerifyCertificate from './pages/VerifyCertificate';
 import AdminDashboard from './pages/dashboard/AdminDashboard';
 import IssuerDashboard from './pages/dashboard/IssuerDashboard';
 import VerifierDashboard from './pages/dashboard/VerifierDashboard';
@@ -27,6 +28,7 @@ function App() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/ocr" element={<OCRProcessor />} />
             <Route path="/mpesa" element={<MpesaPayment />} />
+            <Route path="/verify" element={<VerifyCertificate />} />
 
             {/* Dashboard redirect (role-based) */}
             <Route

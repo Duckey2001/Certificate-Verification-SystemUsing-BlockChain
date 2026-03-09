@@ -148,6 +148,294 @@ def get_user_stats(db: Session, user_id: str) -> Dict[str, Any]:
     }
 
 # Admin endpoints
+@router.get("/system-stats")
+def get_system_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get real system statistics from database"""
+    try:
+        # Get real user stats
+        total_users = db.query(func.count(User.id)).filter(User.is_active == True).scalar()
+        pending_users = db.query(func.count(User.id)).filter(User.role == "pending").scalar()
+        
+        # Get real certificate stats
+        total_certificates = db.query(func.count(Certificate.id)).scalar()
+        pending_certificates = db.query(func.count(Certificate.id)).filter(Certificate.status == "pending").scalar()
+        
+        # Get real verification stats
+        total_verifications = db.query(func.count(VerificationLog.id)).scalar()
+        valid_verifications = db.query(func.count(VerificationLog.id)).filter(VerificationLog.result == "valid").scalar()
+        invalid_verifications = db.query(func.count(VerificationLog.id)).filter(VerificationLog.result == "invalid").scalar()
+        
+        # Get real payment stats
+        total_payments = db.query(func.count(Payment.id)).scalar()
+        confirmed_payments = db.query(func.count(Payment.id)).filter(Payment.status == "CONFIRMED").scalar()
+        total_payment_amount = db.query(func.sum(Payment.amount)).filter(Payment.status == "CONFIRMED").scalar() or 0
+        
+        return {
+            "total_users": total_users or 0,
+            "total_certificates": total_certificates or 0,
+            "total_verifications": total_verifications or 0,
+            "total_payments": total_payments or 0,
+            "total_payment_amount": float(total_payment_amount),
+            "valid_verifications": valid_verifications or 0,
+            "invalid_verifications": invalid_verifications or 0,
+            "pending_users": pending_users or 0,
+            "pending_certificates": pending_certificates or 0,
+            "confirmed_payments": confirmed_payments or 0
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch system stats: {str(e)}"
+        )
+
+@router.get("/users")
+def get_all_users(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    role: Optional[str] = Query(None),
+    institution: Optional[str] = Query(None),
+    q: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get all users with filtering and pagination"""
+    try:
+        query = db.query(User).filter(User.is_active == True)
+        
+        if role and role != "all":
+            query = query.filter(User.role == role)
+        
+        if institution:
+            query = query.filter(User.institution_code == institution)
+        
+        if q:
+            search = f"%{q}%"
+            query = query.filter(
+                or_(
+                    User.username.ilike(search),
+                    User.email.ilike(search),
+                    User.institution_code.ilike(search)
+                )
+            )
+        
+        total = query.count()
+        users = query.order_by(User.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        
+        return {
+            "users": [
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "role": user.role,
+                    "institution_code": user.institution_code,
+                    "is_active": user.is_active,
+                    "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+                    "created_at": user.created_at.isoformat()
+                }
+                for user in users
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch users: {str(e)}"
+        )
+
+@router.get("/certificates")
+def get_all_certificates(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get all certificates with filtering and pagination"""
+    try:
+        query = db.query(Certificate)
+        
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            query = query.filter(Certificate.created_at >= start_dt)
+        
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            query = query.filter(Certificate.created_at <= end_dt)
+        
+        total = query.count()
+        certificates = query.order_by(Certificate.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        
+        return {
+            "certificates": [
+                {
+                    "id": cert.id,
+                    "certificate_hash": cert.certificate_hash,
+                    "student_name": f"{cert.student_name} {cert.student_surname}".strip(),
+                    "student_id": cert.student_id,
+                    "institution": cert.institution,
+                    "issue_date": cert.issue_date.isoformat() if cert.issue_date else None,
+                    "status": cert.status,
+                    "blockchain_tx_id": cert.blockchain_tx_id,
+                    "blockchain_network": cert.blockchain_network,
+                    "created_at": cert.created_at.isoformat()
+                }
+                for cert in certificates
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch certificates: {str(e)}"
+        )
+
+@router.get("/verifications")
+def get_all_verifications(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get all verification requests with filtering and pagination"""
+    try:
+        query = db.query(VerificationLog)
+        
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            query = query.filter(VerificationLog.created_at >= start_dt)
+        
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            query = query.filter(VerificationLog.created_at <= end_dt)
+        
+        total = query.count()
+        verifications = query.order_by(VerificationLog.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        
+        return {
+            "verifications": [
+                {
+                    "id": ver.id,
+                    "verification_date": ver.created_at.isoformat(),
+                    "certificate_hash": ver.certificate_hash,
+                    "verifier_name": ver.verifier_name or "Unknown",
+                    "verifier_id": ver.verifier_user_id,
+                    "result": ver.result,
+                    "blockchain_match": ver.blockchain_verified,
+                    "payment_method": ver.payment_method,
+                    "verification_fee": ver.verification_fee
+                }
+                for ver in verifications
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch verifications: {str(e)}"
+        )
+
+@router.get("/payments")
+def get_all_payments(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get all payments with filtering and pagination"""
+    try:
+        query = db.query(Payment)
+        
+        if start_date:
+            start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            query = query.filter(Payment.created_at >= start_dt)
+        
+        if end_date:
+            end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            query = query.filter(Payment.created_at <= end_dt)
+        
+        total = query.count()
+        payments = query.order_by(Payment.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        
+        return {
+            "payments": [
+                {
+                    "id": payment.id,
+                    "created_at": payment.created_at.isoformat(),
+                    "user_name": payment.payer_name or "Unknown",
+                    "amount": float(payment.amount),
+                    "method": payment.payment_method,
+                    "reference": payment.transaction_reference,
+                    "status": payment.status,
+                    "mpesa_transaction_id": payment.mpesa_transaction_id
+                }
+                for payment in payments
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch payments: {str(e)}"
+        )
+
+@router.get("/system-logs")
+def get_system_logs(
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Get system audit logs with pagination"""
+    try:
+        # Import AuditEvent model
+        from models import AuditEvent
+        
+        query = db.query(AuditEvent)
+        
+        total = query.count()
+        logs = query.order_by(AuditEvent.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+        
+        return {
+            "logs": [
+                {
+                    "id": log.id,
+                    "created_at": log.created_at.isoformat(),
+                    "event_type": log.event_type,
+                    "actor_user_id": log.actor_user_id,
+                    "actor_role": log.actor_role,
+                    "target_user_id": log.target_user_id,
+                    "certificate_hash": log.certificate_hash,
+                    "payload": log.payload
+                }
+                for log in logs
+            ],
+            "total": total,
+            "page": page,
+            "limit": limit
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch system logs: {str(e)}"
+        )
+
 @router.get("/pending-users", response_model=List[PendingUserResponse])
 def get_pending_users(
     db: Session = Depends(get_db),

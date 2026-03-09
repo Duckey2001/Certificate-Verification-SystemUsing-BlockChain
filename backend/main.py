@@ -19,6 +19,15 @@ async def lifespan(app: FastAPI):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     os.makedirs(os.path.join(UPLOAD_DIR, "certificates"), exist_ok=True)
     os.makedirs(os.path.join(UPLOAD_DIR, "verifications"), exist_ok=True)
+    
+    # Initialize blockchain connection
+    from utils.enhanced_blockchain import initialize_blockchain
+    blockchain_initialized = await initialize_blockchain()
+    if blockchain_initialized:
+        print("✅ Blockchain initialized successfully")
+    else:
+        print("⚠️ Blockchain initialization failed - using simulation mode")
+    
     yield
     # Shutdown
 
@@ -44,14 +53,18 @@ from schemas import (
 # Import routers
 from api.auth import router as auth_router
 from api.certificates import router as certificate_router
+from api.enhanced_certificates import router as enhanced_certificate_router
 from api.google_auth import router as google_auth_router
 from api.events import router as events_router
 from api.payments import router as payments_router
 from api.mpesa import router as mpesa_router
+from api.mpesa_integration import router as mpesa_integration_router
 from api.dashboard import router as dashboard_router
 from api.institutions import router as institutions_router
 from api.admin_approval import router as admin_approval_router
 from api.ocr import router as ocr_router
+from api.websocket import router as websocket_router
+from api.activities import router as activities_router
 
 # Security
 from jose import JWTError, jwt
@@ -136,14 +149,18 @@ app.add_middleware(
 # Include routers
 app.include_router(auth_router)
 app.include_router(certificate_router, prefix="/api")
+app.include_router(enhanced_certificate_router, prefix="/api")
 app.include_router(google_auth_router)
 app.include_router(events_router)
 app.include_router(payments_router)
 app.include_router(mpesa_router)
+app.include_router(mpesa_integration_router)
 app.include_router(dashboard_router)
 app.include_router(institutions_router)
 app.include_router(admin_approval_router)
 app.include_router(ocr_router)
+app.include_router(websocket_router)
+app.include_router(activities_router)
 
 # Database dependency is imported from database module
 

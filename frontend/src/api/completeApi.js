@@ -1,46 +1,7 @@
 // Complete API Integration for CertiVert
 import api from './axiosConfig';
 
-// Mock data for development (remove when backend is ready)
-const mockData = {
-  certificates: [
-    {
-      id: '1',
-      studentName: 'John Doe',
-      studentId: 'LGCSE2024001',
-      course: 'Computer Science',
-      grade: 'A+',
-      issueDate: '2024-01-15',
-      credits: '120',
-      hash: '0x8a3f9b7c1d2e5f4a6b8c9d0e1f2a3b4c5d6e7f8',
-      status: 'verified',
-      institution: 'University of Technology',
-      issuerId: 'issuer_001'
-    }
-  ],
-  invitations: [
-    {
-      id: '1',
-      token: 'invite_token_123',
-      role: 'verifier',
-      expiresAt: '2024-02-15',
-      maxUses: 1,
-      usedCount: 0,
-      createdBy: 'issuer_001'
-    }
-  ],
-  verifications: [
-    {
-      id: '1',
-      certificateId: '1',
-      verifierId: 'verifier_001',
-      timestamp: '2024-01-30T10:30:00Z',
-      result: 'valid',
-      hashMatch: true,
-      cost: 10
-    }
-  ]
-};
+// Removed mock data - using real API responses only
 
 export const completeApi = {
   // Certificate Management
@@ -52,13 +13,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Upload error:', error);
-        // Mock response for development
-        return {
-          success: true,
-          fileId: `file_${Date.now()}`,
-          filename: formData.get('certificate').name,
-          message: 'File uploaded successfully'
-        };
+        throw error;
       }
     },
 
@@ -69,16 +24,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Extraction error:', error);
-        // Mock extraction for development
-        return {
-          success: true,
-          studentName: 'John Smith',
-          studentId: 'LGCSE' + Math.floor(1000 + Math.random() * 9000),
-          course: 'Computer Science',
-          grade: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
-          credits: '120',
-          issueDate: new Date().toISOString().split('T')[0]
-        };
+        throw error;
       }
     },
 
@@ -89,17 +35,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Create certificate error:', error);
-        // Mock response for development
-        const mockHash = '0x' + Array.from({length: 64}, 
-          () => Math.floor(Math.random() * 16).toString(16)).join('');
-        
-        return {
-          success: true,
-          certificateId: `CERT_${Date.now()}`,
-          hash: mockHash,
-          transactionId: `0x${Date.now().toString(16)}`,
-          message: 'Certificate issued and stored on blockchain'
-        };
+        throw error;
       }
     },
 
@@ -112,14 +48,14 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Get certificates error:', error);
-        // Mock response for development
+        // Return empty result if no certificates
         return {
-          certificates: mockData.certificates,
+          certificates: [],
           pagination: {
             page,
             limit,
-            total: mockData.certificates.length,
-            pages: 1
+            total: 0,
+            pages: 0
           }
         };
       }
@@ -134,13 +70,10 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Search error:', error);
-        // Mock response for development
+        // Return empty search results
         return {
-          results: mockData.certificates.filter(cert => 
-            cert.studentName.toLowerCase().includes(searchParams.query?.toLowerCase() || '') ||
-            cert.studentId.includes(searchParams.query || '')
-          ),
-          total: mockData.certificates.length
+          results: [],
+          total: 0
         };
       }
     },
@@ -152,8 +85,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Get certificate error:', error);
-        // Mock response for development
-        return mockData.certificates[0];
+        throw error;
       }
     },
 
@@ -164,12 +96,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Revoke error:', error);
-        // Mock response for development
-        return {
-          success: true,
-          message: 'Certificate revoked successfully',
-          revocationId: `REV_${Date.now()}`
-        };
+        throw error;
       }
     }
   },
@@ -183,18 +110,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Verification upload error:', error);
-        // Mock response for development
-        return {
-          success: true,
-          verificationId: `VER_${Date.now()}`,
-          extractedData: {
-            studentName: 'John Smith',
-            studentId: 'LGCSE2024001',
-            course: 'Computer Science',
-            grade: 'A',
-            issueDate: '2024-01-15'
-          }
-        };
+        throw error;
       }
     },
 
@@ -205,22 +121,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Verification error:', error);
-        // Mock response for development
-        const isValid = Math.random() > 0.3; // 70% chance of being valid
-        
-        return {
-          success: true,
-          valid: isValid,
-          certificate: mockData.certificates[0],
-          extractedHash: '0x' + Array.from({length: 64}, 
-            () => Math.floor(Math.random() * 16).toString(16)).join(''),
-          blockchainHash: isValid ? mockData.certificates[0].hash : '0x' + Array.from({length: 64}, 
-            () => Math.floor(Math.random() * 16).toString(16)).join(''),
-          match: isValid,
-          verificationId: `VER_${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          cost: 10
-        };
+        throw error;
       }
     },
 
@@ -231,15 +132,11 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Get result error:', error);
-        // Mock response for development
+        // Return empty result
         return {
           verificationId,
-          status: 'completed',
-          result: {
-            valid: true,
-            certificate: mockData.certificates[0],
-            timestamp: new Date().toISOString()
-          }
+          status: 'not_found',
+          result: null
         };
       }
     },
@@ -253,14 +150,14 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('History error:', error);
-        // Mock response for development
+        // Return empty history
         return {
-          verifications: mockData.verifications,
+          verifications: [],
           pagination: {
             page,
             limit,
-            total: mockData.verifications.length,
-            pages: 1
+            total: 0,
+            pages: 0
           }
         };
       }
@@ -278,17 +175,14 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Batch verification error:', error);
-        // Mock response for development
+        // Return empty batch result
         return {
-          success: true,
-          results: files.map((file, index) => ({
-            filename: file.name,
-            valid: Math.random() > 0.3,
-            verificationId: `BATCH_VER_${Date.now()}_${index}`
-          })),
-          total: files.length,
-          valid: files.filter(() => Math.random() > 0.3).length,
-          invalid: files.filter(() => Math.random() <= 0.3).length
+          success: false,
+          message: 'Batch verification failed',
+          results: [],
+          total: 0,
+          valid: 0,
+          invalid: 0
         };
       }
     }
@@ -303,16 +197,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Generate invitation error:', error);
-        // Mock response for development
-        const token = 'invite_' + Math.random().toString(36).substr(2, 9);
-        
-        return {
-          success: true,
-          token,
-          invitationLink: `${window.location.origin}/invite/${token}`,
-          expiresAt: new Date(Date.now() + parseInt(invitationData.expiresIn) * 24 * 60 * 60 * 1000).toISOString(),
-          message: 'Invitation generated successfully'
-        };
+        throw error;
       }
     },
 
@@ -323,15 +208,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Validate invitation error:', error);
-        // Mock response for development
-        return {
-          valid: true,
-          role: 'verifier',
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-          invitedBy: 'University of Technology',
-          maxUses: 1,
-          usedCount: 0
-        };
+        throw error;
       }
     },
 
@@ -342,12 +219,12 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Invitation stats error:', error);
-        // Mock response for development
+        // Return empty stats
         return {
-          invitedCount: 5,
-          acceptedCount: 3,
-          pendingCount: 2,
-          recentInvitations: mockData.invitations
+          invitedCount: 0,
+          acceptedCount: 0,
+          pendingCount: 0,
+          recentInvitations: []
         };
       }
     },
@@ -359,10 +236,10 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Get invitations error:', error);
-        // Mock response for development
+        // Return empty invitations
         return {
-          invitations: mockData.invitations,
-          total: mockData.invitations.length
+          invitations: [],
+          total: 0
         };
       }
     }
@@ -377,17 +254,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Get profile error:', error);
-        // Mock response for development
-        return {
-          id: userId,
-          username: 'johndoe',
-          email: 'john@example.com',
-          role: 'issuer',
-          institution: 'University of Technology',
-          joinedAt: '2024-01-01',
-          totalCertificates: 10,
-          totalVerifications: 5
-        };
+        throw error;
       }
     },
 
@@ -398,15 +265,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Update profile error:', error);
-        // Mock response for development
-        return {
-          success: true,
-          message: 'Profile updated successfully',
-          user: {
-            id: userId,
-            ...profileData
-          }
-        };
+        throw error;
       }
     },
 
@@ -419,20 +278,14 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Activity error:', error);
-        // Mock response for development
-        const activities = [
-          { type: 'certificate_issued', timestamp: '2024-01-30T10:00:00Z', details: 'Issued certificate LGCSE2024001' },
-          { type: 'invitation_sent', timestamp: '2024-01-29T15:30:00Z', details: 'Sent invitation to verifier@example.com' },
-          { type: 'verification_completed', timestamp: '2024-01-28T14:20:00Z', details: 'Verified certificate CERT-001' }
-        ];
-        
+        // Return empty activity
         return {
-          activities,
+          activities: [],
           pagination: {
             page,
             limit,
-            total: activities.length,
-            pages: 1
+            total: 0,
+            pages: 0
           }
         };
       }
@@ -448,14 +301,14 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('System stats error:', error);
-        // Mock response for development
+        // Return zero stats
         return {
-          totalCertificates: 1000,
-          totalVerifications: 2500,
-          totalUsers: 150,
-          activeUsers: 89,
-          verificationSuccessRate: 95.5,
-          averageVerificationTime: 2.3
+          totalCertificates: 0,
+          totalVerifications: 0,
+          totalUsers: 0,
+          activeUsers: 0,
+          verificationSuccessRate: 0,
+          averageVerificationTime: 0
         };
       }
     },
@@ -467,16 +320,16 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Issuer stats error:', error);
-        // Mock response for development
+        // Return zero stats
         return {
-          certificatesIssued: 50,
-          certificatesVerified: 45,
-          verificationRate: 90,
-          averageGrade: 'A-',
-          topCourses: ['Computer Science', 'Mathematics', 'Physics'],
+          certificatesIssued: 0,
+          certificatesVerified: 0,
+          verificationRate: 0,
+          averageGrade: 'N/A',
+          topCourses: [],
           monthlyIssuance: Array.from({length: 12}, (_, i) => ({
             month: `2024-${String(i+1).padStart(2, '0')}`,
-            count: Math.floor(Math.random() * 20) + 5
+            count: 0
           }))
         };
       }
@@ -489,18 +342,18 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Verifier stats error:', error);
-        // Mock response for development
+        // Return zero stats
         return {
-          totalVerifications: 25,
-          validVerifications: 20,
-          invalidVerifications: 5,
-          successRate: 80,
-          creditsSpent: 250,
-          creditsRemaining: 750,
-          averageCost: 10,
+          totalVerifications: 0,
+          validVerifications: 0,
+          invalidVerifications: 0,
+          successRate: 0,
+          creditsSpent: 0,
+          creditsRemaining: 0,
+          averageCost: 0,
           monthlyActivity: Array.from({length: 12}, (_, i) => ({
             month: `2024-${String(i+1).padStart(2, '0')}`,
-            count: Math.floor(Math.random() * 10) + 1
+            count: 0
           }))
         };
       }
@@ -516,15 +369,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Verify transaction error:', error);
-        // Mock response for development
-        return {
-          valid: true,
-          transactionId,
-          blockNumber: Math.floor(Math.random() * 1000000) + 1000000,
-          timestamp: new Date().toISOString(),
-          gasUsed: Math.floor(Math.random() * 100000) + 50000,
-          confirmations: 12
-        };
+        throw error;
       }
     },
 
@@ -535,19 +380,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Get proof error:', error);
-        // Mock response for development
-        return {
-          certificateId,
-          merkleRoot: '0x' + Array.from({length: 64}, 
-            () => Math.floor(Math.random() * 16).toString(16)).join(''),
-          proof: Array.from({length: 5}, () => 
-            '0x' + Array.from({length: 64}, 
-              () => Math.floor(Math.random() * 16).toString(16)).join('')
-          ),
-          blockHash: '0x' + Array.from({length: 64}, 
-            () => Math.floor(Math.random() * 16).toString(16)).join(''),
-          timestamp: new Date().toISOString()
-        };
+        throw error;
       }
     },
 
@@ -558,14 +391,7 @@ export const completeApi = {
         return response.data;
       } catch (error) {
         console.error('Network status error:', error);
-        // Mock response for development
-        return {
-          network: 'Ethereum Goerli Testnet',
-          status: 'connected',
-          latestBlock: Math.floor(Math.random() * 1000000) + 1000000,
-          gasPrice: Math.floor(Math.random() * 100) + 20,
-          peers: Math.floor(Math.random() * 50) + 10
-        };
+        throw error;
       }
     }
   }

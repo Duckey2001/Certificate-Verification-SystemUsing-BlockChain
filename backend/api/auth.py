@@ -81,7 +81,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
-    except jwt.PyJWTError:
+    except jwt.JWTError:
         raise credentials_exception
     
     # Check if session exists
@@ -163,16 +163,40 @@ async def register(
         )
         db.add(session)
         
-        # Log login activity
+        # Log login activity with institution tracking
         login_activity = LoginActivity(
             user_id=user.id,
             ip_address=request.client.host,
             user_agent=request.headers.get("user-agent"),
             status="success",
             login_method="password",
+            institution_code=user.institution_code,
             created_at=datetime.utcnow()
         )
         db.add(login_activity)
+        
+        # Create comprehensive audit event for institution login
+        from models import AuditEvent
+        audit_event = AuditEvent(
+            id=str(uuid.uuid4()),
+            event_type="user_login_success",
+            actor_user_id=user.id,
+            actor_role=user.role,
+            target_user_id=user.id,
+            institution_code=user.institution_code,
+            payload={
+                "username": user.username,
+                "email": user.email,
+                "institution_code": user.institution_code,
+                "institution_name": institution.name if institution else None,
+                "ip_address": request.client.host,
+                "user_agent": request.headers.get("user-agent"),
+                "login_method": "password",
+                "registration_type": "new_user"
+            },
+            created_at=datetime.utcnow()
+        )
+        db.add(audit_event)
         
         db.commit()
         
@@ -268,10 +292,19 @@ async def login(
             db.commit()
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
-        # Update last login (if column exists)
+        # Update last login and track institution
         if hasattr(user, 'last_login_at'):
             user.last_login_at = datetime.utcnow()
         user.updated_at = datetime.utcnow()
+        
+        # Get institution details
+        institution = None
+        if user.institution_code:
+            institution = db.query(Institution).filter(
+                Institution.code == user.institution_code
+            ).first()
+        
+        print(f"🏫 User institution: {user.institution_code} - {institution.name if institution else 'Unknown'}")
         
         # Create access token
         access_token = create_access_token(
@@ -292,16 +325,40 @@ async def login(
         )
         db.add(session)
         
-        # Log successful login
+        # Log successful login with institution tracking
         login_activity = LoginActivity(
             user_id=user.id,
             ip_address=request.client.host,
             user_agent=request.headers.get("user-agent"),
             status="success",
             login_method="password",
+            institution_code=user.institution_code,
             created_at=datetime.utcnow()
         )
         db.add(login_activity)
+        
+        # Create comprehensive audit event for institution login
+        from models import AuditEvent
+        audit_event = AuditEvent(
+            id=str(uuid.uuid4()),
+            event_type="user_login_success",
+            actor_user_id=user.id,
+            actor_role=user.role,
+            target_user_id=user.id,
+            institution_code=user.institution_code,
+            payload={
+                "username": user.username,
+                "email": user.email,
+                "institution_code": user.institution_code,
+                "institution_name": institution.name if institution else None,
+                "ip_address": request.client.host,
+                "user_agent": request.headers.get("user-agent"),
+                "login_method": "password",
+                "login_type": "existing_user"
+            },
+            created_at=datetime.utcnow()
+        )
+        db.add(audit_event)
         
         print("💾 Committing to database...")
         db.commit()

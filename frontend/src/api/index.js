@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -95,6 +95,16 @@ export const authApi = {
     const response = await api.post('/auth/reset-password', { token, new_password: newPassword });
     return response.data;
   },
+  
+  generateInvitation: async (invitationData) => {
+    const response = await api.post('/auth/invite', invitationData);
+    return response.data;
+  },
+  
+  getAllInvitations: async () => {
+    const response = await api.get('/auth/invitations');
+    return response.data;
+  },
 };
 
 // User API
@@ -165,12 +175,12 @@ export const certificateApi = {
     if (params.start_date) queryParams.append('start_date', params.start_date);
     if (params.end_date) queryParams.append('end_date', params.end_date);
     
-    const response = await api.get(`/certificates/my-issued?${queryParams}`);
+    const response = await api.get(`/certificates/issuer/certificates?${queryParams}`);
     return response.data;
   },
   
   getMyIssuerStats: async () => {
-    const response = await api.get('/certificates/issuer-stats');
+    const response = await api.get('/certificates/issuer/stats');
     return response.data;
   },
   
@@ -215,6 +225,21 @@ export const certificateApi = {
   
   getVerificationHistory: async (certificateId) => {
     const response = await api.get(`/certificates/${certificateId}/verifications`);
+    return response.data;
+  },
+  
+  // OCR endpoints
+  extractCertificateData: async (formData) => {
+    const response = await api.post('/certificates/extract-data', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  
+  getOcrProcessingHistory: async () => {
+    const response = await api.get('/certificates/ocr-history');
     return response.data;
   },
 };
@@ -307,8 +332,19 @@ export const adminApi = {
     return response.data;
   },
   
-  getUsers: async (params = {}) => {
+  getAllUsers: async (page = 1, limit = 20, filters = {}) => {
+    const params = { page, limit, ...filters };
     const response = await api.get('/admin/users', { params });
+    return response.data;
+  },
+  
+  getPendingUsers: async () => {
+    const response = await api.get('/admin/pending-users');
+    return response.data;
+  },
+  
+  approveUser: async (userData) => {
+    const response = await api.post('/admin/approve-user', userData);
     return response.data;
   },
   
@@ -334,6 +370,35 @@ export const adminApi = {
   
   deleteUser: async (userId) => {
     const response = await api.delete(`/admin/users/${userId}`);
+    return response.data;
+  },
+  
+  getAllCertificates: async (page = 1, limit = 20, filters = {}) => {
+    const params = { page, limit, ...filters };
+    const response = await api.get('/admin/certificates', { params });
+    return response.data;
+  },
+  
+  revokeCertificate: async (certificateId) => {
+    const response = await api.post(`/admin/certificates/${certificateId}/revoke`);
+    return response.data;
+  },
+  
+  getAllVerifications: async (page = 1, limit = 20, filters = {}) => {
+    const params = { page, limit, ...filters };
+    const response = await api.get('/admin/verifications', { params });
+    return response.data;
+  },
+  
+  getAllPayments: async (page = 1, limit = 20, filters = {}) => {
+    const params = { page, limit, ...filters };
+    const response = await api.get('/admin/payments', { params });
+    return response.data;
+  },
+  
+  getSystemLogs: async (page = 1, limit = 50) => {
+    const params = { page, limit };
+    const response = await api.get('/admin/system-logs', { params });
     return response.data;
   },
   

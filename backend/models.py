@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Float, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Float, JSON, LargeBinary
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
@@ -18,10 +18,45 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=True)  # Nullable for OAuth users
     google_id = Column(String(255), unique=True, index=True, nullable=True)  # Google OAuth ID
+    github_id = Column(String(255), unique=True, index=True, nullable=True)  # GitHub OAuth ID
     role = Column(String(50), nullable=False)  # admin, issuer, verifier
+    institution_code = Column(String(50), nullable=True)  # Foreign key to institutions
     institution = Column(String(255))
     badge = Column(String(100))
     invited_by = Column(Integer, ForeignKey("users.id"))
+    
+    # Profile information
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    phone_number = Column(String(20), nullable=True)
+    profile_image = Column(LargeBinary, nullable=True)  # Store profile image as binary
+    profile_image_url = Column(String(500), nullable=True)  # Store image URL
+    bio = Column(Text, nullable=True)
+    department = Column(String(100), nullable=True)
+    
+    # Account status
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False, nullable=False)
+    last_login_at = Column(DateTime, nullable=True)
+    email_verified_at = Column(DateTime, nullable=True)
+    
+    # Credits and billing
+    available_credits = Column(Integer, default=0, nullable=False)
+    total_credits_purchased = Column(Integer, default=0, nullable=False)
+    credit_balance_updated_at = Column(DateTime, nullable=True)
+    
+    # Blockchain integration
+    blockchain_wallet_address = Column(String(255), nullable=True)
+    blockchain_public_key = Column(Text, nullable=True)
+    blockchain_user_id = Column(String(100), nullable=True)  # ID on blockchain
+    
+    # Statistics
+    certificates_issued = Column(Integer, default=0, nullable=False)
+    certificates_verified = Column(Integer, default=0, nullable=False)
+    ocr_scans_today = Column(Integer, default=0, nullable=False)
+    last_activity_at = Column(DateTime, nullable=True)
+    
+    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -237,3 +272,123 @@ class VerificationLog(Base):
     
     # Relationships
     verifier = relationship("User", back_populates="verification_logs")
+
+
+class Notification(Base):
+    """
+    Real-time notifications for all system events
+    """
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    notification_type = Column(String(50), nullable=False)  # certificate_issued, verified, payment, system
+    priority = Column(String(20), default="medium")  # low, medium, high, urgent
+    is_read = Column(Boolean, default=False, nullable=False)
+    action_url = Column(String(500), nullable=True)  # URL for action button
+    action_text = Column(String(100), nullable=True)  # Text for action button
+    metadata_json = Column(JSON, nullable=True)  # Additional data
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    read_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    user = relationship("User")
+
+
+class SystemActivity(Base):
+    """
+    Comprehensive activity logging for admin dashboard
+    """
+    __tablename__ = "system_activities"
+
+    id = Column(Integer, primary_key=True, index=True)
+    activity_type = Column(String(50), nullable=False, index=True)  # login, certificate_issue, verification, payment
+    actor_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    actor_role = Column(String(50), nullable=True)
+    actor_name = Column(String(255), nullable=True)  # Denormalized for quick display
+    target_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    institution_code = Column(String(50), nullable=True, index=True)
+    certificate_hash = Column(String(64), nullable=True, index=True)
+    verification_request_id = Column(Integer, nullable=True, index=True)
+    payment_id = Column(Integer, nullable=True, index=True)
+    
+    # Activity details
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(20), nullable=False)  # success, failed, pending
+    ip_address = Column(String(100), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    location = Column(String(255), nullable=True)
+    
+    # Blockchain tracking
+    blockchain_tx_id = Column(String(200), nullable=True)
+    blockchain_block_number = Column(Integer, nullable=True)
+    blockchain_network = Column(String(50), nullable=True)
+    
+    # Additional metadata
+    metadata_json = Column(JSON, nullable=True)
+    impact_score = Column(Integer, default=1)  # 1-10 for importance ranking
+    
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    actor = relationship("User", foreign_keys=[actor_user_id])
+    target_user = relationship("User", foreign_keys=[target_user_id])
+
+
+class BlockchainTransaction(Base):
+    """
+    Track all blockchain transactions for audit and verification
+    """
+    __tablename__ = "blockchain_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    transaction_hash = Column(String(200), unique=True, nullable=False, index=True)
+    transaction_type = Column(String(50), nullable=False)  # certificate_issue, user_registration, verification
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    certificate_hash = Column(String(64), nullable=True, index=True)
+    network = Column(String(50), nullable=False)  # hardhat, sepolia, mainnet
+    block_number = Column(Integer, nullable=True)
+    block_hash = Column(String(200), nullable=True)
+    gas_used = Column(Integer, nullable=True)
+    gas_price = Column(String(50), nullable=True)
+    transaction_fee = Column(Float, nullable=True)
+    status = Column(String(20), default="pending")  # pending, confirmed, failed
+    confirmations = Column(Integer, default=0)
+    contract_address = Column(String(200), nullable=True)
+    method_called = Column(String(100), nullable=True)
+    input_data = Column(Text, nullable=True)
+    output_data = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    confirmed_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    user = relationship("User")
+
+
+class CreditTransaction(Base):
+    """
+    Track all credit purchases and usage
+    """
+    __tablename__ = "credit_transactions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    transaction_type = Column(String(50), nullable=False)  # purchase, usage, refund, bonus
+    amount = Column(Integer, nullable=False)  # Positive for credits gained, negative for used
+    balance_before = Column(Integer, nullable=False)
+    balance_after = Column(Integer, nullable=False)
+    reference_type = Column(String(50), nullable=True)  # certificate, verification, payment
+    reference_id = Column(Integer, nullable=True)
+    payment_id = Column(Integer, nullable=True)
+    description = Column(Text, nullable=True)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Relationships
+    user = relationship("User")

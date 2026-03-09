@@ -104,6 +104,36 @@ class BlockchainService:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
+    def create_certificate_hash(self, certificate) -> Dict[str, Any]:
+        """Create and return certificate hash"""
+        try:
+            # Create hash from certificate data
+            cert_data = {
+                "student_name": certificate.student_name,
+                "student_surname": certificate.student_surname,
+                "student_id": certificate.student_id,
+                "institution": certificate.institution,
+                "issue_date": certificate.issue_date.isoformat() if certificate.issue_date else None,
+                "examination_year": certificate.examination_year,
+                "subjects": certificate.subjects
+            }
+            
+            # Generate hash using blockchain service
+            import hashlib
+            import json
+            
+            # Create deterministic hash from certificate data
+            cert_json = json.dumps(cert_data, sort_keys=True, separators=(',', ':'))
+            hash_bytes = hashlib.sha256(cert_json.encode()).hexdigest()
+            certificate_hash = f"0x{hash_bytes}"
+            
+            return {
+                "hash": certificate_hash,
+                "created_at": datetime.now().isoformat()
+            }
+        except Exception as e:
+            raise RuntimeError(f"Failed to create certificate hash: {str(e)}")
+
     def notify_network(self, event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         Notify other nodes that something happened (upload / tamper).
