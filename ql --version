@@ -1,0 +1,28 @@
+                                                                  List of databases
+         Name         |     Owner     | Encoding | Locale Provider |   Collate   |    Ctype    | ICU Locale | ICU Rules |      Access privileges      
+----------------------+---------------+----------+-----------------+-------------+-------------+------------+-----------+-----------------------------
+ certivert_audit      | postgres      | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =Tc/postgres               +
+                      |               |          |                 |             |             |            |           | postgres=CTc/postgres      +
+                      |               |          |                 |             |             |            |           | certivert_app=CTc/postgres
+ certivert_auth       | postgres      | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =Tc/postgres               +
+                      |               |          |                 |             |             |            |           | postgres=CTc/postgres      +
+                      |               |          |                 |             |             |            |           | certivert_app=CTc/postgres
+ certivert_certs      | postgres      | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =Tc/postgres               +
+                      |               |          |                 |             |             |            |           | postgres=CTc/postgres      +
+                      |               |          |                 |             |             |            |           | certivert_app=CTc/postgres
+ certivert_db         | certivert     | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =Tc/certivert              +
+                      |               |          |                 |             |             |            |           | certivert=CTc/certivert
+ certivert_issuer     | postgres      | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =Tc/postgres               +
+                      |               |          |                 |             |             |            |           | postgres=CTc/postgres      +
+                      |               |          |                 |             |             |            |           | certivert_user=CTc/postgres
+ certivert_verifier   | postgres      | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =Tc/postgres               +
+                      |               |          |                 |             |             |            |           | postgres=CTc/postgres      +
+                      |               |          |                 |             |             |            |           | certivert_user=CTc/postgres
+ diploma_verification | diploma_admin | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | 
+ postgres             | postgres      | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | 
+ template0            | postgres      | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =c/postgres                +
+                      |               |          |                 |             |             |            |           | postgres=CTc/postgres
+ template1            | postgres      | UTF8     | libc            | en_US.UTF-8 | en_US.UTF-8 |            |           | =c/postgres                +
+                      |               |          |                 |             |             |            |           | postgres=CTc/postgres
+(10 rows)
+

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M-Pesa Payment Test - CertiVert</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .payment-details {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .payment-details h4 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .payment-details p {
+            color: #666;
+            margin: 5px 0;
+            font-size: 14px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .config-status {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .config-status h4 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .config-item {
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+
+        .config-status .configured {
+            color: #28a745;
+        }
+
+        .config-status .not-configured {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💳 M-Pesa Payment Test</h1>
+            <p>Test Lesotho M-Pesa payments for CertiVert</p>
+        </div>
+
+        <div class="config-status" id="configStatus">
+            <h4>🔧 Configuration Status</h4>
+            <div class="config-item">
+                <span>M-Pesa:</span>
+                <span id="mpesaConfig" class="not-configured">Checking...</span>
+            </div>
+            <div class="config-item">
+                <span>Environment:</span>
+                <span id="mpesaEnv">-</span>
+            </div>
+            <div class="config-item">
+                <span>Currency:</span>
+                <span id="mpesaCurrency">-</span>
+            </div>
+        </div>
+
+        <form id="paymentForm">
+            <div class="form-group">
+                <label for="phone">Phone Number (Lesotho)</label>
+                <input type="tel" id="phone" name="phone" placeholder="+26658881234" required>
+            </div>
+
+            <div class="form-group">
+                <label for="amount">Amount (LSL)</label>
+                <input type="number" id="amount" name="amount" value="5.00" min="1.00" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label for="reference">Account Reference</label>
+                <input type="text" id="reference" name="reference" value="TEST-PAYMENT" required>
+            </div>
+
+            <div class="form-group">
+                <label for="description">Description</label>
+                <input type="text" id="description" name="description" value="Test payment for CertiVert" required>
+            </div>
+
+            <button type="submit" class="btn" id="payBtn">
+                Pay with M-Pesa
+            </button>
+        </form>
+
+        <div class="status" id="status"></div>
+
+        <div class="payment-details" id="paymentDetails">
+            <h4>💳 Payment Details</h4>
+            <p><strong>Payment ID:</strong> <span id="detailPaymentId"></span></p>
+            <p><strong>Merchant Request ID:</strong> <span id="detailMerchantId"></span></p>
+            <p><strong>Checkout Request ID:</strong> <span id="detailCheckoutId"></span></p>
+            <p><strong>Transaction ID:</strong> <span id="detailTransactionId"></span></p>
+            <p><strong>Status:</strong> <span id="detailStatus"></span></p>
+            <p><strong>Amount:</strong> <span id="detailAmount"></span></p>
+            <p><strong>Created:</strong> <span id="detailCreated"></span></p>
+            <p><strong>Confirmed:</strong> <span id="detailConfirmed"></span></p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        let authToken = null;
+        let currentPaymentId = null;
+
+        // Check configuration on page load
+        async function checkConfig() {
+            try {
+                const response = await fetch(`${API_BASE}/api/mpesa/config`);
+                const config = await response.json();
+                
+                document.getElementById('mpesaConfig').textContent = config.configured ? '✅ Configured' : '❌ Not Configured';
+                document.getElementById('mpesaConfig').className = config.configured ? 'configured' : 'not-configured';
+                document.getElementById('mpesaEnv').textContent = config.environment || '-';
+                document.getElementById('mpesaCurrency').textContent = config.currency || '-';
+                
+                if (!config.configured) {
+                    showStatus('M-Pesa is not properly configured. Please check environment variables.', 'error');
+                }
+            } catch (error) {
+                document.getElementById('mpesaConfig').textContent = '❌ Error';
+                document.getElementById('mpesaConfig').className = 'not-configured';
+                showStatus('Failed to check M-Pesa configuration', 'error');
+            }
+        }
+
+        // Get auth token (simple test user)
+        async function getAuthToken() {
+            try {
+                // Try to login with test user
+                const response = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'username=test_user&password=test123'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    authToken = data.token;
+                    return true;
+                } else {
+                    // Register test user first
+                    const registerResponse = await fetch(`${API_BASE}/api/auth/register`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            username: 'test_user',
+                            email: 'test@example.com',
+                            password: 'test123',
+                            role: 'verifier',
+                            phone_number: '+26658881234'
+                        })
+                    });
+
+                    if (registerResponse.ok) {
+                        // Try login again
+                        const loginResponse = await fetch(`${API_BASE}/api/auth/login`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: 'username=test_user&password=test123'
+                        });
+
+                        if (loginResponse.ok) {
+                            const data = await loginResponse.json();
+                            authToken = data.token;
+                            return true;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Auth error:', error);
+            }
+            return false;
+        }
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.innerHTML = message;
+            statusDiv.style.display = 'block';
+        }
+
+        function showPaymentDetails(payment) {
+            document.getElementById('detailPaymentId').textContent = payment.payment_id || payment.id || '-';
+            document.getElementById('detailMerchantId').textContent = payment.merchant_request_id || '-';
+            document.getElementById('detailCheckoutId').textContent = payment.checkout_request_id || '-';
+            document.getElementById('detailTransactionId').textContent = payment.mpesa_transaction_id || '-';
+            document.getElementById('detailStatus').textContent = payment.status || '-';
+            document.getElementById('detailAmount').textContent = `${payment.amount || 0} ${payment.currency || 'LSL'}`;
+            document.getElementById('detailCreated').textContent = payment.created_at ? new Date(payment.created_at).toLocaleString() : '-';
+            document.getElementById('detailConfirmed').textContent = payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString() : '-';
+            
+            document.getElementById('paymentDetails').style.display = 'block';
+        }
+
+        async function checkPaymentStatus(paymentId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/mpesa/status/${paymentId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                if (response.ok) {
+                    const payment = await response.json();
+                    showPaymentDetails(payment);
+                    
+                    if (payment.status === 'confirmed') {
+                        showStatus('✅ Payment confirmed successfully!', 'success');
+                    } else if (payment.status === 'failed') {
+                        showStatus(`❌ Payment failed: ${payment.error_message || 'Unknown error'}`, 'error');
+                    } else {
+                        showStatus('⏳ Payment is still pending...', 'info');
+                        // Check again in 5 seconds
+                        setTimeout(() => checkPaymentStatus(paymentId), 5000);
+                    }
+                } else {
+                    showStatus('Failed to check payment status', 'error');
+                }
+            } catch (error) {
+                showStatus(`Error checking status: ${error.message}`, 'error');
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('paymentForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const phone = document.getElementById('phone').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+            const reference = document.getElementById('reference').value;
+            const description = document.getElementById('description').value;
+            const payBtn = document.getElementById('payBtn');
+
+            // Validate phone number (Lesotho format)
+            if (!phone.match(/^(\+266|0)?[5-6]\d{7}$/)) {
+                showStatus('Invalid Lesotho phone number. Use format: +2665XXXXXXX or 05XXXXXXX', 'error');
+                return;
+            }
+
+            // Get auth token
+            if (!authToken) {
+                const hasAuth = await getAuthToken();
+                if (!hasAuth) {
+                    showStatus('Failed to authenticate. Please check server connection.', 'error');
+                    return;
+                }
+            }
+
+            // Disable button and show loading
+            payBtn.disabled = true;
+            payBtn.innerHTML = '<span class="loading"></span>Processing...';
+            showStatus('Initiating M-Pesa STK Push...', 'info');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/mpesa/stk-push`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        phone_number: phone,
+                        amount: amount,
+                        account_reference: reference,
+                        transaction_desc: description
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    currentPaymentId = result.payment_id;
+                    showStatus('✅ STK Push sent! Please check your phone and enter your M-Pesa PIN.', 'success');
+                    showPaymentDetails(result);
+                    
+                    // Start checking payment status
+                    setTimeout(() => checkPaymentStatus(currentPaymentId), 3000);
+                } else {
+                    showStatus(`❌ Payment failed: ${result.detail || result.message || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                showStatus(`Error: ${error.message}`, 'error');
+            } finally {
+                // Re-enable button
+                payBtn.disabled = false;
+                payBtn.innerHTML = 'Pay with M-Pesa';
+            }
+        });
+
+        // Initialize page
+        checkConfig();
+    </script>
+</body>
+</html>

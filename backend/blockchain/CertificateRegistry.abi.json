@@ -1,0 +1,137 @@
+[
+  {
+    "inputs": [],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "hash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "issuer",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "metadataUri",
+        "type": "string"
+      }
+    ],
+    "name": "CertificateIssued",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "expectedHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "bytes32",
+        "name": "computedHash",
+        "type": "bytes32"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "reporter",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "CertificateTamperReported",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "hash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "exists",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "hash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "string",
+        "name": "metadataUri",
+        "type": "string"
+      }
+    ],
+    "name": "issue",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "expectedHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "computedHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "reportTamper",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]

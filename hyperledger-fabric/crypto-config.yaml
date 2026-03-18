@@ -1,0 +1,109 @@
+################################################################################
+#
+#   Hyperledger Fabric Crypto Configuration for LGCSE Certificate Verification
+#
+#   This file defines the organizational structure and certificate hierarchy
+#   for the LGCSE blockchain network.
+#
+################################################################################
+
+# ---------------------------------------------------------------------------
+#   "OrdererOrgs" - Configuration for one orderer organization
+# ---------------------------------------------------------------------------
+OrdererOrgs:
+  - Name: Orderer
+    Domain: example.com
+    EnableNodeOUs: true
+    CA:
+        Hostname: ca
+    Specs:
+      - Hostname: orderer
+        CommonName: orderer.example.com
+        SANS:
+          - "localhost"
+          - "127.0.0.1"
+          - "orderer.example.com"
+          - "ecol.example.com"
+          - "limkokwing.example.com"
+          - "botho.example.com"
+          - "nul.example.com"
+
+# ---------------------------------------------------------------------------
+#   "PeerOrgs" - Configuration for four peer organizations
+# ---------------------------------------------------------------------------
+PeerOrgs:
+  # ---------------------------------------------------------------------------
+  #   Ecol University Organization (Issuer)
+  # ---------------------------------------------------------------------------
+  - Name: Ecol
+    Domain: ecol.example.com
+    EnableNodeOUs: true
+    CA:
+        Hostname: ca
+    Template:
+      Count: 1
+      SANS:
+        - "localhost"
+        - "127.0.0.1"
+        - "peer0.ecol.example.com"
+        - "ecol.example.com"
+        - "www.ecol.example.com"
+    Users:
+      Count: 1
+
+  # ---------------------------------------------------------------------------
+  #   Limkokwing University Organization (Verifier)
+  # ---------------------------------------------------------------------------
+  - Name: Limkokwing
+    Domain: limkokwing.example.com
+    EnableNodeOUs: true
+    CA:
+        Hostname: ca
+    Template:
+      Count: 1
+      SANS:
+        - "localhost"
+        - "127.0.0.1"
+        - "peer0.limkokwing.example.com"
+        - "limkokwing.example.com"
+        - "www.limkokwing.example.com"
+    Users:
+      Count: 1
+
+  # ---------------------------------------------------------------------------
+  #   Botho University Organization (Verifier)
+  # ---------------------------------------------------------------------------
+  - Name: Botho
+    Domain: botho.example.com
+    EnableNodeOUs: true
+    CA:
+        Hostname: ca
+    Template:
+      Count: 1
+      SANS:
+        - "localhost"
+        - "127.0.0.1"
+        - "peer0.botho.example.com"
+        - "botho.example.com"
+        - "www.botho.example.com"
+    Users:
+      Count: 1
+
+  # ---------------------------------------------------------------------------
+  #   National University of Lesotho Organization (Verifier)
+  # ---------------------------------------------------------------------------
+  - Name: Nul
+    Domain: nul.example.com
+    EnableNodeOUs: true
+    CA:
+        Hostname: ca
+    Template:
+      Count: 1
+      SANS:
+        - "localhost"
+        - "127.0.0.1"
+        - "peer0.nul.example.com"
+        - "nul.example.com"
+        - "www.nul.example.com"
+    Users:
+      Count: 1

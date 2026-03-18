@@ -1,0 +1,255 @@
+################################################################################
+#
+#   Hyperledger Fabric Configuration for LGCSE Certificate Verification
+#
+#   Organizations:
+#   - OrdererOrg: Orderer organization
+#   - EcolOrg: Ecol University (Issuer)
+#   - LimkokwingOrg: Limkokwing University (Verifier)
+#   - BothoOrg: Botho University (Verifier)
+#   - NulOrg: National University of Lesotho (Verifier)
+#
+################################################################################
+
+################################################################################
+#   Section: Organizations
+################################################################################
+Organizations:
+
+    # Orderer Organization
+    - &OrdererOrg
+        Name: OrdererOrg
+        ID: OrdererMSP
+        MSPDir: ../organizations/ordererOrganizations/example.com/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('OrdererMSP.member')"
+            Writers:
+                Type: Signature
+                Rule: "OR('OrdererMSP.member')"
+            Admins:
+                Type: Signature
+                Rule: "OR('OrdererMSP.admin')"
+        OrdererEndpoints:
+            - "orderer.example.com:7050"
+
+    # Ecol University Organization (Issuer)
+    - &EcolOrg
+        Name: EcolOrgMSP
+        ID: EcolOrgMSP
+        MSPDir: ../organizations/peerOrganizations/ecol.example.com/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('EcolOrgMSP.admin', 'EcolOrgMSP.peer', 'EcolOrgMSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('EcolOrgMSP.admin', 'EcolOrgMSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('EcolOrgMSP.admin')"
+            Endorsement:
+                Type: Signature
+                Rule: "OR('EcolOrgMSP.peer')"
+        AnchorPeers:
+            - Host: peer0.ecol.example.com
+              Port: 7051
+
+    # Limkokwing University Organization (Verifier)
+    - &LimkokwingOrg
+        Name: LimkokwingOrgMSP
+        ID: LimkokwingOrgMSP
+        MSPDir: ../organizations/peerOrganizations/limkokwing.example.com/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('LimkokwingOrgMSP.admin', 'LimkokwingOrgMSP.peer', 'LimkokwingOrgMSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('LimkokwingOrgMSP.admin', 'LimkokwingOrgMSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('LimkokwingOrgMSP.admin')"
+            Endorsement:
+                Type: Signature
+                Rule: "OR('LimkokwingOrgMSP.peer')"
+        AnchorPeers:
+            - Host: peer0.limkokwing.example.com
+              Port: 9051
+
+    # Botho University Organization (Verifier)
+    - &BothoOrg
+        Name: BothoOrgMSP
+        ID: BothoOrgMSP
+        MSPDir: ../organizations/peerOrganizations/botho.example.com/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('BothoOrgMSP.admin', 'BothoOrgMSP.peer', 'BothoOrgMSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('BothoOrgMSP.admin', 'BothoOrgMSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('BothoOrgMSP.admin')"
+            Endorsement:
+                Type: Signature
+                Rule: "OR('BothoOrgMSP.peer')"
+        AnchorPeers:
+            - Host: peer0.botho.example.com
+              Port: 11051
+
+    # National University of Lesotho Organization (Verifier)
+    - &NulOrg
+        Name: NulOrgMSP
+        ID: NulOrgMSP
+        MSPDir: ../organizations/peerOrganizations/nul.example.com/msp
+        Policies:
+            Readers:
+                Type: Signature
+                Rule: "OR('NulOrgMSP.admin', 'NulOrgMSP.peer', 'NulOrgMSP.client')"
+            Writers:
+                Type: Signature
+                Rule: "OR('NulOrgMSP.admin', 'NulOrgMSP.client')"
+            Admins:
+                Type: Signature
+                Rule: "OR('NulOrgMSP.admin')"
+            Endorsement:
+                Type: Signature
+                Rule: "OR('NulOrgMSP.peer')"
+        AnchorPeers:
+            - Host: peer0.nul.example.com
+              Port: 12051
+
+################################################################################
+#   Section: Capabilities
+################################################################################
+Capabilities:
+    Channel: &ChannelCapabilities
+        V2_0: true
+    Orderer: &OrdererCapabilities
+        V2_0: true
+    Application: &ApplicationCapabilities
+        V2_0: true
+
+################################################################################
+#   Section: Application
+################################################################################
+Application: &ApplicationDefaults
+    Organizations:
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+        LifecycleEndorsement:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Endorsement"
+    Capabilities:
+        <<: *ApplicationCapabilities
+
+################################################################################
+#   Section: Orderer
+################################################################################
+Orderer: &OrdererDefaults
+    OrdererType: etcdraft
+    Addresses:
+        - orderer.example.com:7050
+    EtcdRaft:
+        Consenters:
+            - Host: orderer.example.com
+              Port: 7050
+              ClientTLSCert: ../organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+              ServerTLSCert: ../organizations/ordererOrganizations/example.com/orderers/orderer.example.com/tls/server.crt
+    BatchTimeout: 2s
+    BatchSize:
+        MaxMessageCount: 10
+        AbsoluteMaxBytes: 99 MB
+        PreferredMaxBytes: 512 KB
+    Organizations:
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+        BlockValidation:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+    Capabilities:
+        <<: *OrdererCapabilities
+
+################################################################################
+#   Section: Channel
+################################################################################
+Channel: &ChannelDefaults
+    Policies:
+        Readers:
+            Type: ImplicitMeta
+            Rule: "ANY Readers"
+        Writers:
+            Type: ImplicitMeta
+            Rule: "ANY Writers"
+        Admins:
+            Type: ImplicitMeta
+            Rule: "MAJORITY Admins"
+    Capabilities:
+        <<: *ChannelCapabilities
+
+################################################################################
+#   Section: Profiles
+################################################################################
+Profiles:
+
+    # LGCSE Certificate Verification Channel
+    LGCSEChannel:
+        Consortium: LGCSEConsortium
+        <<: *ChannelDefaults
+        Application:
+            <<: *ApplicationDefaults
+            Organizations:
+                - *EcolOrg
+                - *LimkokwingOrg
+                - *BothoOrg
+                - *NulOrg
+            Capabilities:
+                <<: *ApplicationCapabilities
+
+    # Orderer System Channel
+    LGCSESystemChannel:
+        <<: *ChannelDefaults
+        Orderer:
+            <<: *OrdererDefaults
+            Organizations:
+                - *OrdererOrg
+            Capabilities:
+                <<: *OrdererCapabilities
+        Consortiums:
+            LGCSEConsortium:
+                Organizations:
+                    - *EcolOrg
+                    - *LimkokwingOrg
+                    - *BothoOrg
+                    - *NulOrg
+
+################################################################################
+#   Section: Consortium
+################################################################################
+Consortiums:
+
+    LGCSEConsortium:
+        Organizations:
+            - *EcolOrg
+            - *LimkokwingOrg
+            - *BothoOrg
+            - *NulOrg

@@ -1,0 +1,22 @@
+nohup: ignoring input
+INFO:     Will watch for changes in these directories: ['/home/duckey/lgcse-project/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [6947] using WatchFiles
+INFO:mpesa_client:M-Pesa Client initialized for LES - LSL
+INFO:mpesa_client:M-Pesa Client initialized for LES - LSL
+INFO:mpesa_b2b_client:M-Pesa B2B Client initialized for LES - LSL
+INFO:     Started server process [6975]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+🔗 Initializing blockchain connection...
+✅ Blockchain connection established
+✅ Blockchain initialized successfully
+INFO:     127.0.0.1:50320 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50332 - "OPTIONS /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50312 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50344 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [6975]
+INFO:     Stopping reloader process [6947]

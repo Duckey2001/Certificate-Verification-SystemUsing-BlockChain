@@ -1,0 +1,22 @@
+{
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 5432,
+            "driver": "PostgreSQL",
+            "name": "diploma_verification",
+            "database": "diploma_verification",
+            "group": "Default",
+            "username": "diploma_admin",
+            "password": "diploma1234",
+            "ssl": false,
+            "connectionTimeout": 15,
+            "pool": {
+                "max": 10,
+                "idleTimeoutMillis": 10000
+            }
+        }
+    ]
+}

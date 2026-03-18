@@ -1,0 +1,68 @@
+{
+  "image_path": "./uploads/certificates/dc942112-b126-4f19-a49f-a36bc26a0b8f.jpeg",
+  "timestamp": "2026-03-11 16:29:59",
+  "results": [
+    {
+      "engine": "Tesseract",
+      "success": true,
+      "confidence": 90.3913043478261,
+      "processing_time": 4.074839353561401,
+      "word_count": 112,
+      "text": "Examinations Council of Lesotho\nin collaboration with\n\nUniversity of Cambridge Local Examinations Syndicate\n\nLesotho General Certificate of Secondary Education\nThis certifies that in the examination of March 2021\nMPHO LEKUNYE\n\nDate of Birth: 09 March 2003\n\nof ST. MARY'S HIGH SCHOOL ROMA\n\nwas awarded the following grades in the syllabuses shown:\n\nSyllabus Level Grade\nPhysical Science LGCSE C(c)\nSesotho LGCSE C(c)\nAccounting LGCSE D(d)\nFood and Nutrition LGCSE D(d)\nGeography LGCSE D(d)\nReligious Studies LGCSE D(d)\nEnglish Language LGCSE E(e)\nMathematics LGCSE F(f)\nSYLLABUSES REPORTED: EIGHT\n\nChairperson Vice-Chancellor\n\nExaminations Council of Lesotho University of Cambridge:\n\nCandidate Number: LS613/160535272\n\nay Cambridge Assessment Cane NS\ns i te of Issue: lovemt\nInternational Education\n\n00087318\n\n"
+    },
+    {
+      "engine": "OCR.space",
+      "success": true,
+      "confidence": 80,
+      "processing_time": 3.1187431812286377,
+      "word_count": 0,
+      "text": "Examinations Council of Lesotho\nin collaboration with\nUniversity of Cambridge Local Examinations Syndicate\nLesotho General Certificate of Secondary Education\nThis certifies that in the examination of March 2021\nMPHO LEKUNYE\nDate of Birth: 09 March 2003\nof ST. MARY'S HIGH SCHOOL ROMA\nwas awarded the following grades in the syllabuses shown:\nSyllabus\nPhysical Science\nSesotho\nAccounting\nFood and Nutrition\nGeography\nReligious Studies\nEnglish Language\nMathematics\nSYLLABUSES REPORTED: EIGHT\nLevel\nLGCSE\nLGCSE\nLGCSE\nLGCSE\nLGCSE\nLGCSE\nLGCSE\nLGCSE\nGrade\nC(c)\nC(c)\nD(d)\nD(d)\nD(d)\nD(d)\nE(e)\nF(f)\nChairperson\nExaminations Council of Lesotho\nVice-Chancellor\nUniversity of Cambridge\nCambridge Assessment\nInternational Education\nCandidate Number: LS613/160535272\nCertificate Number: LM2100009810\nDate of Issue:\n04 November 2021\n00087318\nDP938"
+    },
+    {
+      "engine": "Multi-OCR Processor",
+      "success": true,
+      "confidence": 95.0,
+      "processing_time": 19.889694452285767,
+      "best_api": "gemini",
+      "apis_tried": [
+        "gemini",
+        "kolosal",
+        "ocr_space",
+        "tesseract"
+      ],
+      "text": "```json\n{\n  \"student_name\": \"MPHO LEKUNYE\",\n  \"student_surname\": \"LEKUNYE\",\n  \"student_id\": \"LS613/160535272\",\n  \"examination_year\": \"2021\",\n  \"institution\": \"ST. MARY'S HIGH SCHOOL ROMA\",\n  \"certificate_type\": \"Lesotho General Certificate of Secondary Education\",\n  \"exam_board\": \"Cambridge Assessment International Education\",\n  \"subjects\": [\n    {\n      \"name\": \"Physical Science\",\n      \"grade\": \"C(c)\"\n    },\n    {\n      \"name\": \"Sesotho\",\n      \"grade\": \"C(c)\"\n    },\n    {\n      \"name\": \"Accounting\",\n      \"grade\": \"D(d)\"\n    },\n    {\n      \"name\": \"Food and Nutrition\",\n      \"grade\": \"D(d)\"\n    },\n    {\n      \"name\": \"Geography\",\n      \"grade\": \"D(d)\"\n    },\n    {\n      \"name\": \"Religious Studies\",\n      \"grade\": \"D(d)\"\n    },\n    {\n      \"name\": \"English Language\",\n      \"grade\": \"E(e)\"\n    },\n    {\n      \"name\": \"Mathematics\",\n      \"grade\": \"F(f)\"\n    }\n  ],\n  \"certificate_number\": \"LM2100009810\",\n  \"issue_date\": \"04 November 2021\",\n  \"raw_text\": \"Examinations Council of Lesotho\\nin collaboration with\\nUniversity of Cambridge Local Examinations Syndicate\\nLesotho General Certificate of Secondary Education\\nThis certifies that in the examination of March 2021\\nMPHO LEKUNYE\\nDate of Birth: 09 March 2003\\nof ST. MARY'S HIGH SCHOOL ROMA\\nwas awarded the following grades in the syllabuses shown:\\nSyllabus Level Grade\\nPhysical Science LGCSE C(c)\\nSesotho LGCSE C(c)\\nAccounting LGCSE D(d)\\nFood and Nutrition LGCSE D(d)\\nGeography LGCSE D(d)\\nReligious Studies LGCSE D(d)\\nEnglish Language LGCSE E(e)\\nMathematics LGCSE F(f)\\nSYLLABUSES REPORTED: EIGHT\\nChairperson\\nExaminations Council of Lesotho\\nVice-Chancellor\\nUniversity of Cambridge\\nCambridge Assessment\\nInternational Education\\nCandidate Number: LS613/160535272\\nCertificate Number: LM2100009810\\nDate of Issue: 04 November 2021\\n00087318\\nDP936\"\n}\n```",
+      "comparison": {
+        "confidence_ranking": [
+          [
+            "gemini",
+            95.0
+          ],
+          [
+            "tesseract",
+            90.22522522522523
+          ],
+          [
+            "ocr_space",
+            0.0
+          ]
+        ],
+        "text_length_comparison": {
+          "gemini": 1836,
+          "ocr_space": 832,
+          "tesseract": 795
+        },
+        "word_count_comparison": {
+          "gemini": 178,
+          "ocr_space": 148,
+          "tesseract": 111
+        },
+        "processing_time_comparison": {
+          "gemini": 10.240713119506836,
+          "ocr_space": 3.5185534954071045,
+          "tesseract": 3.7036075592041016
+        }
+      }
+    }
+  ],
+  "best_engine": "Multi-OCR Processor"
+}

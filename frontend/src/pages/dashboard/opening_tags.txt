@@ -1,0 +1,45 @@
+1002:            <motion.div
+1009:              <motion.div
+1108:            <motion.div
+1145:                      <motion.div
+1173:        <motion.div
+1180:            <motion.div 
+1184:              <motion.div 
+1197:                  <motion.div
+1215:            <motion.div 
+1219:              <motion.div 
+1227:                <motion.div 
+1236:                  <motion.div
+1280:                      <motion.div 
+1298:            <motion.div 
+1329:                  <motion.div
+1478:              <motion.div
+1494:                  <motion.div
+1531:                <motion.div
+1574:        <motion.div 
+1594:                      <motion.div
+1688:                  <motion.div
+1697:                    <motion.div 
+1708:                <motion.div
+1757:              <motion.div
+1803:              <motion.div
+1829:              <motion.div
+1838:                  <motion.div
+1845:                    <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-4 gap-6">
+1902:                    <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+1953:                    <motion.div variants={itemVariants} className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+1978:                    <motion.div variants={itemVariants} className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-2xl shadow-xl p-6 text-white">
+2008:                    <motion.div variants={itemVariants} className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl overflow-hidden">
+2107:                    <motion.div variants={itemVariants}>
+2199:                                <motion.div
+2387:                          <motion.div
+2447:                                    <motion.div
+2617:                            <motion.div 
+2641:                        <motion.div
+2771:                            <motion.div
+2792:                            <motion.div
+2847:                                <motion.div 
+2896:                              <motion.div
+2911:                          <motion.div
+2920:                                <motion.div
+3116:                              <motion.div

@@ -1,0 +1,877 @@
+# Kubernetes Production Deployment for LGCSE Certificate Verification System
+# This manifest deploys the complete Hyperledger Fabric system to Kubernetes
+# with production-grade configuration, security, and monitoring.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lgcse-blockchain
+  labels:
+    name: lgcse-blockchain
+    environment: production
+
+---
+# Persistent Volume Claims for blockchain data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: blockchain-data-pvc
+  namespace: lgcse-blockchain
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: efs-sc
+
+---
+# ConfigMap for blockchain configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blockchain-config
+  namespace: lgcse-blockchain
+data:
+  configtx.yaml: |
+    Organizations:
+      - &OrdererOrg
+        Name: OrdererOrg
+        ID: OrdererMSP
+        MSPDir: /etc/hyperledger/fabric/crypto/ordererOrganizations/example.com/msp
+        Policies:
+          Readers:
+            Type: Signature
+            Rule: "OR('OrdererMSP.member')"
+          Writers:
+            Type: Signature
+            Rule: "OR('OrdererMSP.member')"
+          Admins:
+            Type: Signature
+            Rule: "OR('OrdererMSP.admin')"
+        OrdererEndpoints:
+          - "orderer0.example.com:7050"
+      - &EcolOrg
+        Name: EcolOrgMSP
+        ID: EcolOrgMSP
+        MSPDir: /etc/hyperledger/fabric/crypto/peerOrganizations/ecol.example.com/msp
+        Policies:
+          Readers:
+            Type: Signature
+            Rule: "OR('EcolOrgMSP.admin', 'EcolOrgMSP.peer', 'EcolOrgMSP.client')"
+          Writers:
+            Type: Signature
+            Rule: "OR('EcolOrgMSP.admin', 'EcolOrgMSP.client')"
+          Admins:
+            Type: Signature
+            Rule: "OR('EcolOrgMSP.admin')"
+        AnchorPeers:
+          - Host: peer0.ecol.example.com
+            Port: 7051
+      - &LimkokwingOrg
+        Name: LimkokwingOrgMSP
+        ID: LimkokwingOrgMSP
+        MSPDir: /etc/hyperledger/fabric/crypto/peerOrganizations/limkokwing.example.com/msp
+        Policies:
+          Readers:
+            Type: Signature
+            Rule: "OR('LimkokwingOrgMSP.admin', 'LimkokwingOrgMSP.peer', 'LimkokwingOrgMSP.client')"
+          Writers:
+            Type: Signature
+            Rule: "OR('LimkokwingOrgMSP.admin', 'LimkokwingOrgMSP.client')"
+          Admins:
+            Type: Signature
+            Rule: "OR('LimkokwingOrgMSP.admin')"
+        AnchorPeers:
+          - Host: peer0.limkokwing.example.com
+            Port: 9051
+      - &BothoOrg
+        Name: BothoOrgMSP
+        ID: BothoOrgMSP
+        MSPDir: /etc/hyperledger/fabric/crypto/peerOrganizations/botho.example.com/msp
+        Policies:
+          Readers:
+            Type: Signature
+            Rule: "OR('BothoOrgMSP.admin', 'BothoOrgMSP.peer', 'BothoOrgMSP.client')"
+          Writers:
+            Type: Signature
+            Rule: "OR('BothoOrgMSP.admin', 'BothoOrgMSP.client')"
+          Admins:
+            Type: Signature
+            Rule: "OR('BothoOrgMSP.admin')"
+        AnchorPeers:
+          - Host: peer0.botho.example.com
+            Port: 11051
+      - &NulOrg
+        Name: NulOrgMSP
+        ID: NulOrgMSP
+        MSPDir: /etc/hyperledger/fabric/crypto/peerOrganizations/nul.example.com/msp
+        Policies:
+          Readers:
+            Type: Signature
+            Rule: "OR('NulOrgMSP.admin', 'NulOrgMSP.peer', 'NulOrgMSP.client')"
+          Writers:
+            Type: Signature
+            Rule: "OR('NulOrgMSP.admin', 'NulOrgMSP.client')"
+          Admins:
+            Type: Signature
+            Rule: "OR('NulOrgMSP.admin')"
+        AnchorPeers:
+          - Host: peer0.nul.example.com
+            Port: 12051
+    Capabilities:
+      Application: &ApplicationCapabilities
+        V2_0: true
+      Channel: &ChannelCapabilities
+        V2_0: true
+      Orderer: &OrdererCapabilities
+        V2_0: true
+    Application: &ApplicationDefaults
+      Capabilities:
+        <<: *ApplicationCapabilities
+    Orderer: &OrdererDefaults
+      OrdererType: etcdraft
+      BatchTimeout: 2s
+      BatchSize:
+        MaxMessageCount: 10
+        AbsoluteMaxBytes: 99 MB
+        PreferredMaxBytes: 512 KB
+      Organizations:
+        - *OrdererOrg
+      Capabilities:
+        <<: *OrdererCapabilities
+    Channel: &ChannelDefaults
+      Policies:
+        Readers:
+          Type: ImplicitMeta
+          Rule: "ANY Readers"
+        Writers:
+          Type: ImplicitMeta
+          Rule: "ANY Writers"
+        Admins:
+          Type: ImplicitMeta
+          Rule: "MAJORITY Admins"
+      Capabilities:
+        <<: *ChannelCapabilities
+    Profiles:
+      LGCSEChannel:
+        Consortium: LGCSEConsortium
+        <<: *ChannelDefaults
+        Application:
+          <<: *ApplicationDefaults
+          Organizations:
+            - *EcolOrg
+            - *LimkokwingOrg
+            - *BothoOrg
+            - *NulOrg
+          Capabilities:
+            <<: *ApplicationCapabilities
+      LGCSESystemChannel:
+        <<: *ChannelDefaults
+        Orderer:
+          <<: *OrdererDefaults
+          Organizations:
+            - *OrdererOrg
+          Capabilities:
+            <<: *OrdererCapabilities
+        Consortiums:
+          LGCSEConsortium:
+            Organizations:
+              - *EcolOrg
+              - *LimkokwingOrg
+              - *BothoOrg
+              - *NulOrg
+
+  crypto-config.yaml: |
+    OrdererOrgs:
+      - Name: Orderer
+        Domain: example.com
+        EnableNodeOUs: true
+        CA:
+          Hostname: ca
+        Specs:
+          - Hostname: orderer
+            CommonName: orderer.example.com
+            SANS:
+              - "localhost"
+              - "127.0.0.1"
+              - "orderer.example.com"
+              - "ecol.example.com"
+              - "limkokwing.example.com"
+              - "botho.example.com"
+              - "nul.example.com"
+    PeerOrgs:
+      - Name: Ecol
+        Domain: ecol.example.com
+        EnableNodeOUs: true
+        CA:
+          Hostname: ca
+        Template:
+          Count: 1
+          SANS:
+            - "localhost"
+            - "127.0.0.1"
+            - "peer0.ecol.example.com"
+            - "ecol.example.com"
+            - "www.ecol.example.com"
+        Users:
+          Count: 1
+      - Name: Limkokwing
+        Domain: limkokwing.example.com
+        EnableNodeOUs: true
+        CA:
+          Hostname: ca
+        Template:
+          Count: 1
+          SANS:
+            - "localhost"
+            - "127.0.0.1"
+            - "peer0.limkokwing.example.com"
+            - "limkokwing.example.com"
+            - "www.limkokwing.example.com"
+        Users:
+          Count: 1
+      - Name: Botho
+        Domain: botho.example.com
+        EnableNodeOUs: true
+        CA:
+          Hostname: ca
+        Template:
+          Count: 1
+          SANS:
+            - "localhost"
+            - "127.0.0.1"
+            - "peer0.botho.example.com"
+            - "botho.example.com"
+            - "www.botho.example.com"
+        Users:
+          Count: 1
+      - Name: Nul
+        Domain: nul.example.com
+        EnableNodeOUs: true
+        CA:
+          Hostname: ca
+        Template:
+          Count: 1
+          SANS:
+            - "localhost"
+            - "127.0.0.1"
+            - "peer0.nul.example.com"
+            - "nul.example.com"
+            - "www.nul.example.com"
+        Users:
+          Count: 1
+
+---
+# Certificate Authorities
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ca-orderer
+  namespace: lgcse-blockchain
+spec:
+  serviceName: ca-orderer
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ca-orderer
+  template:
+    metadata:
+      labels:
+        app: ca-orderer
+    spec:
+      containers:
+      - name: ca-orderer
+        image: hyperledger/fabric-ca:latest
+        env:
+        - name: FABRIC_CA_HOME
+          value: "/etc/hyperledger/fabric-ca-server"
+        - name: FABRIC_CA_SERVER_CA_NAME
+          value: "ca-orderer"
+        - name: FABRIC_CA_SERVER_TLS_ENABLED
+          value: "true"
+        - name: FABRIC_CA_SERVER_PORT
+          value: "7054"
+        ports:
+        - containerPort: 7054
+        volumeMounts:
+        - name: ca-data
+          mountPath: /etc/hyperledger/fabric-ca-server
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: ca-data
+        persistentVolumeClaim:
+          claimName: blockchain-data-pvc
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ca-ecol
+  namespace: lgcse-blockchain
+spec:
+  serviceName: ca-ecol
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ca-ecol
+  template:
+    metadata:
+      labels:
+        app: ca-ecol
+    spec:
+      containers:
+      - name: ca-ecol
+        image: hyperledger/fabric-ca:latest
+        env:
+        - name: FABRIC_CA_HOME
+          value: "/etc/hyperledger/fabric-ca-server"
+        - name: FABRIC_CA_SERVER_CA_NAME
+          value: "ca-ecol"
+        - name: FABRIC_CA_SERVER_TLS_ENABLED
+          value: "true"
+        - name: FABRIC_CA_SERVER_PORT
+          value: "8054"
+        ports:
+        - containerPort: 8054
+        volumeMounts:
+        - name: ca-data
+          mountPath: /etc/hyperledger/fabric-ca-server
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: ca-data
+        persistentVolumeClaim:
+          claimName: blockchain-data-pvc
+
+---
+# Orderer Service
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: orderer
+  namespace: lgcse-blockchain
+spec:
+  serviceName: orderer
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orderer
+  template:
+    metadata:
+      labels:
+        app: orderer
+    spec:
+      containers:
+      - name: orderer
+        image: hyperledger/fabric-orderer:latest
+        env:
+        - name: FABRIC_LOGGING_SPEC
+          value: "INFO"
+        - name: ORDERER_GENERAL_LISTENADDRESS
+          value: "0.0.0.0"
+        - name: ORDERER_GENERAL_LISTENPORT
+          value: "7050"
+        - name: ORDERER_GENERAL_BOOTSTRAPMETHOD
+          value: "none"
+        - name: ORDERER_CHANNELPARTICIPATION_ENABLED
+          value: "true"
+        - name: ORDERER_GENERAL_LOCALMSPID
+          value: "OrdererMSP"
+        - name: ORDERER_GENERAL_TLS_ENABLED
+          value: "true"
+        - name: ORDERER_GENERAL_TLS_PRIVATEKEY
+          value: "/etc/hyperledger/fabric/tls/server.key"
+        - name: ORDERER_GENERAL_TLS_CERTIFICATE
+          value: "/etc/hyperledger/fabric/tls/server.crt"
+        - name: ORDERER_GENERAL_TLS_ROOTCAS
+          value: "[/etc/hyperledger/fabric/tls/ca.crt]"
+        - name: ORDERER_KAFKA_TOPIC_REPLICATIONFACTOR
+          value: "1"
+        - name: ORDERER_KAFKA_VERBOSE
+          value: "true"
+        - name: ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE
+          value: "/etc/hyperledger/fabric/tls/server.crt"
+        - name: ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY
+          value: "/etc/hyperledger/fabric/tls/server.key"
+        - name: ORDERER_GENERAL_CLUSTER_ROOTCAS
+          value: "[/etc/hyperledger/fabric/tls/ca.crt]"
+        - name: ORDERER_METRICS_PROVIDER
+          value: "prometheus"
+        - name: ORDERER_OPERATIONS_LISTENADDRESS
+          value: "0.0.0.0:9443"
+        - name: ORDERER_OPERATIONS_TLS_ENABLED
+          value: "true"
+        - name: ORDERER_OPERATIONS_TLS_PRIVATEKEY
+          value: "/etc/hyperledger/fabric/tls/server.key"
+        - name: ORDERER_OPERATIONS_TLS_CERTIFICATE
+          value: "/etc/hyperledger/fabric/tls/server.crt"
+        - name: ORDERER_OPERATIONS_TLS_ROOTCAS
+          value: "[/etc/hyperledger/fabric/tls/ca.crt]"
+        - name: ORDERER_OPERATIONS_TLS_CLIENTROOTCAS
+          value: "[/etc/hyperledger/fabric/tls/ca.crt]"
+        ports:
+        - containerPort: 7050
+        - containerPort: 9443
+        volumeMounts:
+        - name: orderer-data
+          mountPath: /etc/hyperledger/fabric
+        - name: blockchain-config
+          mountPath: /config
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: orderer-data
+        persistentVolumeClaim:
+          claimName: blockchain-data-pvc
+      - name: blockchain-config
+        configMap:
+          name: blockchain-config
+
+---
+# Peer Services
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: peer-ecol
+  namespace: lgcse-blockchain
+spec:
+  serviceName: peer-ecol
+  replicas: 1
+  selector:
+    matchLabels:
+      app: peer-ecol
+  template:
+    metadata:
+      labels:
+        app: peer-ecol
+    spec:
+      containers:
+      - name: peer
+        image: hyperledger/fabric-peer:latest
+        env:
+        - name: CORE_PEER_ID
+          value: "peer0.ecol.example.com"
+        - name: CORE_PEER_ADDRESS
+          value: "peer0.ecol.example.com:7051"
+        - name: CORE_PEER_LISTENADDRESS
+          value: "0.0.0.0:7051"
+        - name: CORE_PEER_CHAINCODEADDRESS
+          value: "peer0.ecol.example.com:7052"
+        - name: CORE_PEER_CHAINCODELISTENADDRESS
+          value: "0.0.0.0:7052"
+        - name: CORE_PEER_GOSSIP_BOOTSTRAP
+          value: "peer0.ecol.example.com:7051"
+        - name: CORE_PEER_GOSSIP_EXTERNALENDPOINT
+          value: "peer0.ecol.example.com:7051"
+        - name: CORE_PEER_LOCALMSPID
+          value: "EcolOrgMSP"
+        - name: CORE_PEER_TLS_ENABLED
+          value: "true"
+        - name: CORE_PEER_TLS_CERT_FILE
+          value: "/etc/hyperledger/fabric/tls/server.crt"
+        - name: CORE_PEER_TLS_KEY_FILE
+          value: "/etc/hyperledger/fabric/tls/server.key"
+        - name: CORE_PEER_TLS_ROOTCERT_FILE
+          value: "/etc/hyperledger/fabric/tls/ca.crt"
+        - name: CORE_MSP_CONFIGPATH
+          value: "/etc/hyperledger/fabric/msp"
+        - name: CORE_OPERATIONS_LISTENADDRESS
+          value: "peer0.ecol.example.com:9444"
+        - name: CORE_OPERATIONS_TLS_ENABLED
+          value: "true"
+        - name: CORE_OPERATIONS_TLS_CERT_FILE
+          value: "/etc/hyperledger/fabric/tls/server.crt"
+        - name: CORE_OPERATIONS_TLS_KEY_FILE
+          value: "/etc/hyperledger/fabric/tls/server.key"
+        - name: CORE_OPERATIONS_TLS_ROOTCERT_FILE
+          value: "/etc/hyperledger/fabric/tls/ca.crt"
+        - name: CORE_METRICS_PROVIDER
+          value: "prometheus"
+        - name: FABRIC_LOGGING_SPEC
+          value: "INFO"
+        - name: CORE_CHAINCODE_LOGGING_LEVEL
+          value: "INFO"
+        - name: CORE_VM_ENDPOINT
+          value: "unix:///host/var/run/docker.sock"
+        - name: CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE
+          value: "lgcse-blockchain"
+        - name: FABRIC_CFG_PATH
+          value: "/etc/hyperledger/fabric"
+        - name: CORE_LEDGER_STATE_STATEDATABASE
+          value: "CouchDB"
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_COUCHDBADDRESS
+          value: "couchdb0:5984"
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME
+          value: "admin"
+        - name: CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD
+          value: "adminpw"
+        ports:
+        - containerPort: 7051
+        - containerPort: 7052
+        - containerPort: 9444
+        volumeMounts:
+        - name: peer-data
+          mountPath: /etc/hyperledger/fabric
+        - name: blockchain-config
+          mountPath: /config
+        - name: docker-socket
+          mountPath: /var/run/docker.sock
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      - name: couchdb
+        image: couchdb:3.3.2
+        env:
+        - name: COUCHDB_USER
+          value: "admin"
+        - name: COUCHDB_PASSWORD
+          value: "adminpw"
+        ports:
+        - containerPort: 5984
+        volumeMounts:
+        - name: couchdb-data
+          mountPath: /opt/couchdb/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: peer-data
+        persistentVolumeClaim:
+          claimName: blockchain-data-pvc
+      - name: blockchain-config
+        configMap:
+          name: blockchain-config
+      - name: docker-socket
+        hostPath:
+          path: /var/run/docker.sock
+      - name: couchdb-data
+        persistentVolumeClaim:
+          claimName: blockchain-data-pvc
+
+---
+# Monitoring Stack
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: lgcse-blockchain
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+      - name: prometheus
+        image: prom/prometheus:latest
+        ports:
+        - containerPort: 9090
+        volumeMounts:
+        - name: prometheus-config
+          mountPath: /etc/prometheus
+        - name: prometheus-data
+          mountPath: /prometheus
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+      volumes:
+      - name: prometheus-config
+        configMap:
+          name: prometheus-config
+      - name: prometheus-data
+        persistentVolumeClaim:
+          claimName: blockchain-data-pvc
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: lgcse-blockchain
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: grafana/grafana:latest
+        env:
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: "admin"
+        - name: GF_INSTALL_PLUGINS
+          value: "grafana-piechart-panel,grafana-worldmap-panel"
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - name: grafana-data
+          mountPath: /var/lib/grafana
+        - name: grafana-config
+          mountPath: /etc/grafana/provisioning
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: grafana-data
+        persistentVolumeClaim:
+          claimName: blockchain-data-pvc
+      - name: grafana-config
+        configMap:
+          name: grafana-config
+
+---
+# Services
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca-orderer
+  namespace: lgcse-blockchain
+spec:
+  selector:
+    app: ca-orderer
+  ports:
+  - port: 7054
+    targetPort: 7054
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca-ecol
+  namespace: lgcse-blockchain
+spec:
+  selector:
+    app: ca-ecol
+  ports:
+  - port: 8054
+    targetPort: 8054
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orderer
+  namespace: lgcse-blockchain
+spec:
+  selector:
+    app: orderer
+  ports:
+  - port: 7050
+    targetPort: 7050
+  - port: 9443
+    targetPort: 9443
+  type: LoadBalancer
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: peer-ecol
+  namespace: lgcse-blockchain
+spec:
+  selector:
+    app: peer-ecol
+  ports:
+  - port: 7051
+    targetPort: 7051
+  - port: 7052
+    targetPort: 7052
+  - port: 9444
+    targetPort: 9444
+  type: LoadBalancer
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: lgcse-blockchain
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 9090
+    targetPort: 9090
+  type: LoadBalancer
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: lgcse-blockchain
+spec:
+  selector:
+    app: grafana
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: LoadBalancer
+
+---
+# Ingress for external access
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lgcse-blockchain-ingress
+  namespace: lgcse-blockchain
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - blockchain.lgcse.example.com
+    secretName: lgcse-blockchain-tls
+  rules:
+  - host: blockchain.lgcse.example.com
+    http:
+      paths:
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: grafana
+            port:
+              number: 3000
+      - path: /prometheus
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus
+            port:
+              number: 9090
+      - path: /explorer
+        pathType: Prefix
+        backend:
+          service:
+            name: blockchain-explorer
+            port:
+              number: 8080
+
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: peer-ecol-hpa
+  namespace: lgcse-blockchain
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: peer-ecol
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# Network Policies
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lgcse-blockchain-netpol
+  namespace: lgcse-blockchain
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: lgcse-blockchain
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: lgcse-blockchain
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+
+---
+# Pod Security Policy
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: lgcse-blockchain-psp
+  namespace: lgcse-blockchain
+spec:
+  privileged: false
+  allowPrivilegeEscalation: false
+  requiredDropCapabilities:
+    - ALL
+  volumes:
+    - 'configMap'
+    - 'emptyDir'
+    - 'projected'
+    - 'secret'
+    - 'downwardAPI'
+    - 'persistentVolumeClaim'
+  runAsUser:
+    rule: 'MustRunAsNonRoot'
+  seLinux:
+    rule: 'RunAsAny'
+  fsGroup:
+    rule: 'RunAsAny'

@@ -1,0 +1,243 @@
+{
+  "name": "certificate-chaincode",
+  "version": "1.0.0",
+  "collections": {
+    "certificatePrivateData": {
+      "name": "certificatePrivateData",
+      "policy": {
+        "identities": [
+          {
+            "role": {
+              "name": "member",
+              "mspId": "EcolOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "member", 
+              "mspId": "LimkokwingOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "member",
+              "mspId": "BothoOrgMSP" 
+            }
+          },
+          {
+            "role": {
+              "name": "member",
+              "mspId": "NulOrgMSP"
+            }
+          }
+        ],
+        "policy": {
+          "2-of": [
+            {
+              "signed_by": "member"
+            },
+            {
+              "signed_by": "member"
+            }
+          ]
+        }
+      },
+      "requiredPeerCount": 1,
+      "maxPeerCount": 3,
+      "blockToLive": 1000,
+      "memberOnlyRead": true
+    },
+    "verificationPrivateData": {
+      "name": "verificationPrivateData", 
+      "policy": {
+        "identities": [
+          {
+            "role": {
+              "name": "member",
+              "mspId": "EcolOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "member",
+              "mspId": "LimkokwingOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "member",
+              "mspId": "BothoOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "member", 
+              "mspId": "NulOrgMSP"
+            }
+          }
+        ],
+        "policy": {
+          "2-of": [
+            {
+              "signed_by": "member"
+            },
+            {
+              "signed_by": "member"
+            }
+          ]
+        }
+      },
+      "requiredPeerCount": 1,
+      "maxPeerCount": 3,
+      "blockToLive": 500,
+      "memberOnlyRead": true
+    },
+    "institutionPrivateData": {
+      "name": "institutionPrivateData",
+      "policy": {
+        "identities": [
+          {
+            "role": {
+              "name": "member",
+              "mspId": "EcolOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "admin",
+              "mspId": "EcolOrgMSP"
+            }
+          }
+        ],
+        "policy": {
+          "1-of": [
+            {
+              "signed_by": "member"
+            }
+          ]
+        }
+      },
+      "requiredPeerCount": 1,
+      "maxPeerCount": 1,
+      "blockToLive": 1000000,
+      "memberOnlyRead": true
+    },
+    "auditPrivateData": {
+      "name": "auditPrivateData",
+      "policy": {
+        "identities": [
+          {
+            "role": {
+              "name": "admin",
+              "mspId": "EcolOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "admin",
+              "mspId": "LimkokwingOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "admin", 
+              "mspId": "BothoOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "admin",
+              "mspId": "NulOrgMSP"
+            }
+          }
+        ],
+        "policy": {
+          "2-of": [
+            {
+              "signed_by": "admin"
+            },
+            {
+              "signed_by": "admin"
+            }
+          ]
+        }
+      },
+      "requiredPeerCount": 2,
+      "maxPeerCount": 4,
+      "blockToLive": 1000000,
+      "memberOnlyRead": true
+    },
+    "studentPrivateData": {
+      "name": "studentPrivateData",
+      "policy": {
+        "identities": [
+          {
+            "role": {
+              "name": "member",
+              "mspId": "EcolOrgMSP"
+            }
+          }
+        ],
+        "policy": {
+          "1-of": [
+            {
+              "signed_by": "member"
+            }
+          ]
+        }
+      },
+      "requiredPeerCount": 1,
+      "maxPeerCount": 1,
+      "blockToLive": 1000000,
+      "memberOnlyRead": true
+    },
+    "crossOrgSharedData": {
+      "name": "crossOrgSharedData",
+      "policy": {
+        "identities": [
+          {
+            "role": {
+              "name": "member",
+              "mspId": "EcolOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "member",
+              "mspId": "LimkokwingOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "member",
+              "mspId": "BothoOrgMSP"
+            }
+          },
+          {
+            "role": {
+              "name": "member",
+              "mspId": "NulOrgMSP"
+            }
+          }
+        ],
+        "policy": {
+          "3-of": [
+            {
+              "signed_by": "member"
+            },
+            {
+              "signed_by": "member"
+            },
+            {
+              "signed_by": "member"
+            }
+          ]
+        }
+      },
+      "requiredPeerCount": 2,
+      "maxPeerCount": 4,
+      "blockToLive": 3650,
+      "memberOnlyRead": false
+    }
+  }
+}

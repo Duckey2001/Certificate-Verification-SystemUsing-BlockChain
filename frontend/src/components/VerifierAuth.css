@@ -1,0 +1,315 @@
+/* Verifier Authentication Styles */
+.verifier-auth-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.verifier-auth-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  padding: 40px;
+  width: 100%;
+  max-width: 500px;
+  position: relative;
+  overflow: hidden;
+}
+
+.verifier-auth-card.register-card {
+  max-width: 700px;
+}
+
+.verifier-auth-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #667eea, #764ba2, #667eea);
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.verifier-auth-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.verifier-auth-header h2 {
+  color: #333;
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.verifier-auth-header p {
+  color: #666;
+  font-size: 16px;
+  margin: 0;
+}
+
+.verifier-auth-form {
+  margin-bottom: 25px;
+}
+
+.form-section {
+  margin-bottom: 30px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.form-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.form-section h3 {
+  color: #444;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+}
+
+.form-section h3::before {
+  content: '';
+  width: 4px;
+  height: 20px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  margin-right: 10px;
+  border-radius: 2px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #555;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.form-control {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e1e5e9;
+  border-radius: 8px;
+  font-size: 15px;
+  transition: all 0.3s ease;
+  background: #fafafa;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #667eea;
+  background: white;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-control::placeholder {
+  color: #999;
+}
+
+.verifier-auth-btn {
+  width: 100%;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.verifier-auth-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+}
+
+.verifier-auth-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 8px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.verifier-auth-footer {
+  text-align: center;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
+}
+
+.verifier-auth-footer p {
+  color: #666;
+  font-size: 14px;
+  margin: 8px 0;
+}
+
+.auth-link {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.3s ease;
+}
+
+.auth-link:hover {
+  color: #764ba2;
+  text-decoration: underline;
+}
+
+.alert {
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.alert-danger {
+  background: #fee;
+  color: #c33;
+  border: 1px solid #fcc;
+}
+
+.alert-success {
+  background: #efe;
+  color: #3c3;
+  border: 1px solid #cfc;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .verifier-auth-container {
+    padding: 10px;
+  }
+  
+  .verifier-auth-card {
+    padding: 30px 20px;
+  }
+  
+  .verifier-auth-card.register-card {
+    max-width: 100%;
+  }
+  
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  
+  .verifier-auth-header h2 {
+    font-size: 24px;
+  }
+  
+  .verifier-auth-header p {
+    font-size: 14px;
+  }
+}
+
+@media (max-width: 480px) {
+  .verifier-auth-card {
+    padding: 20px 15px;
+  }
+  
+  .verifier-auth-header h2 {
+    font-size: 22px;
+  }
+  
+  .form-control {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+  
+  .verifier-auth-btn {
+    padding: 12px 16px;
+    font-size: 15px;
+  }
+}
+
+/* Animation for form appearance */
+.verifier-auth-card {
+  animation: slideUp 0.6s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Focus states for accessibility */
+.form-control:focus {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+
+.verifier-auth-btn:focus {
+  outline: 2px solid #667eea;
+  outline-offset: 2px;
+}
+
+/* Loading state animation */
+.verifier-auth-btn:disabled .spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+/* Success state */
+.alert-success {
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

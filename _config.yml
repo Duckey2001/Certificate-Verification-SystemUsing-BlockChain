@@ -1,0 +1,72 @@
+# GitHub Pages configuration
+title: LGCSE Certificate Verification System
+description: Blockchain-based certificate verification system using OCR technology
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+theme: jekyll-theme-primer
+
+# Plugins
+plugins:
+  - jekyll-github-metadata
+  - jekyll-seo-tag
+  - jekyll-coffeescript
+  - jekyll-commonmark-ghpages
+  - jekyll-gist
+  - jekyll-paginate
+  - jekyll-relative-links
+  - jekyll-optional-front-matter
+  - jekyll-readme-index
+  - jekyll-default-layout
+  - jekyll-titles-from-headings
+
+# Exclude files and directories from processing
+exclude:
+  - backend/
+  - node_modules/
+  - venv/
+  - .venv/
+  - blockchain/
+  - hyperledger-fabric/
+  - "*.py"
+  - "*.js"
+  - package.json
+  - package-lock.json
+  - requirements.txt
+  - .env*
+  - "*.sql"
+  - uploads/
+  - __pycache__/
+  - .git/
+
+# Include specific files
+include:
+  - README.md
+  - PROJECT_STATUS.md
+  - IMPLEMENTATION_SUMMARY.md
+
+# Pagination
+paginate: 10
+paginate_path: "/page:num/"
+
+# SEO settings
+url: ""
+baseurl: ""
+
+# GitHub metadata settings
+github:
+  repository_name: LGCSE Certificate Verification System
+  repository_url: https://github.com/duckey2001/Certificate-Verification-SystemUsing-BlockChain
+
+# SEO tag settings
+logo: ""
+image: ""
+twitter:
+  username: ""
+  card: summary
+
+# Social media
+social:
+  name: LGCSE Certificate Verification System
+  links:

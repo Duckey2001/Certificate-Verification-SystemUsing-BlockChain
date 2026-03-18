@@ -1,0 +1,68 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install Python dependencies
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install -r backend/requirements.txt
+        
+    - name: Install Node.js dependencies
+      run: |
+        npm install
+        cd backend && npm install && cd ..
+        cd frontend && npm install && cd ..
+        
+    - name: Setup Pages
+      uses: actions/configure-pages@v3
+      
+    - name: Build with Jekyll
+      uses: actions/jekyll-build-pages@v1
+      with:
+        source: ./
+        destination: ./_site
+      env:
+        JEKYLL_ENV: production
+        
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v2
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    
+    permissions:
+      pages: write
+      id-token: write
+      
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+      
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v2

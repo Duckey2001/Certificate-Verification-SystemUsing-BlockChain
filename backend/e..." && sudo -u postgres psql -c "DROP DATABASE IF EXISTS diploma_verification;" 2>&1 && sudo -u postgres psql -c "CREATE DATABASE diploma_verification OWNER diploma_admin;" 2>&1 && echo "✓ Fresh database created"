@@ -1,0 +1,15 @@
+      table_name       
+-----------------------
+ audit_events
+ badges
+ blockchain_ledger
+ certificates
+ diplomas
+ institutions
+ invitations
+ payments
+ users
+ verification_requests
+ verifications
+(11 rows)
+

@@ -1,0 +1,46 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+const Register = () => {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="max-w-md w-full p-8 bg-white rounded-lg shadow">
+        <h2 className="text-2xl font-bold text-center mb-6">Register</h2>
+        <form>
+          <div className="mb-4">
+            <input 
+              type="text" 
+              placeholder="Username" 
+              className="w-full p-2 border rounded"
+            />
+          </div>
+          <div className="mb-4">
+            <input 
+              type="email" 
+              placeholder="Email" 
+              className="w-full p-2 border rounded"
+            />
+          </div>
+          <div className="mb-4">
+            <input 
+              type="password" 
+              placeholder="Password" 
+              className="w-full p-2 border rounded"
+            />
+          </div>
+          <button className="w-full bg-blue-600 text-white p-2 rounded">
+            Register
+          </button>
+          <p className="mt-4 text-center">
+            Already have an account?{' '}
+            <Link to="/login" className="text-blue-600">
+              Login here
+            </Link>
+          </p>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default Register;
