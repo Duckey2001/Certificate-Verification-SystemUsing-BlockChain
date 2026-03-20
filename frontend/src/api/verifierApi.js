@@ -16,8 +16,8 @@ export const verifierApi = {
   // Get verification statistics
   getStats: async () => {
     try {
-      logRequest('GET', '/certificates/verifier-stats');
-      const response = await api.get('/certificates/verifier-stats');
+      logRequest('GET', '/api/verifier/stats');
+      const response = await api.get('/api/verifier/stats');
       console.log('✅ Verifier stats received:', response.data);
       return response.data;
     } catch (error) {
@@ -28,9 +28,9 @@ export const verifierApi = {
   // Get my verifications
   getMyVerifications: async (limit = 50, offset = 0) => {
     try {
-      logRequest('GET', `/certificates/my-verifications?limit=${limit}&offset=${offset}`);
-      const response = await api.get('/certificates/my-verifications', {
-        params: { limit, offset }
+      logRequest('GET', `/api/verifier/verifications?limit=${limit}`);
+      const response = await api.get('/api/verifier/verifications', {
+        params: { limit }
       });
       console.log(`✅ Received ${response.data?.length || 0} verifications`);
       return response.data;

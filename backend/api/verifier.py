@@ -102,22 +102,68 @@ async def get_verifier_stats(
         if current_user.role not in ["verifier", "admin"]:
             raise HTTPException(status_code=403, detail="Not authorized")
         
-        # Return mock data for now to avoid database issues
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Total verifications for this verifier
+        total_verifications = db.query(VerificationRequest).filter(
+            VerificationRequest.verifier_id == current_user.id
+        ).count()
+        
+        # Valid verifications
+        valid_verifications = db.query(VerificationRequest).filter(
+            VerificationRequest.verifier_id == current_user.id,
+            VerificationRequest.result == "valid"
+        ).count()
+        
+        # Invalid verifications  
+        invalid_verifications = db.query(VerificationRequest).filter(
+            VerificationRequest.verifier_id == current_user.id,
+            VerificationRequest.result == "invalid"
+        ).count()
+        
+        # Total fees collected
+        total_fees = db.query(func.sum(Payment.amount)).join(
+            VerificationRequest, Payment.verification_request_id == VerificationRequest.id
+        ).filter(
+            VerificationRequest.verifier_id == current_user.id,
+            Payment.status == "completed"
+        ).scalar() or 0
+        
+        # Today's stats
+        today_verifications = db.query(VerificationRequest).filter(
+            VerificationRequest.verifier_id == current_user.id,
+            VerificationRequest.created_at >= today_start
+        ).count()
+        
+        today_fees = db.query(func.sum(Payment.amount)).join(
+            VerificationRequest, Payment.verification_request_id == VerificationRequest.id
+        ).filter(
+            VerificationRequest.verifier_id == current_user.id,
+            Payment.status == "completed",
+            Payment.created_at >= today_start
+        ).scalar() or 0
+        
         return {
-            "total_verifications": 0,
-            "pending_verifications": 0,
-            "completed_today": 0,
-            "success_rate": 0.0,
-            "average_time": 0.0
+            "total": total_verifications,
+            "valid": valid_verifications, 
+            "invalid": invalid_verifications,
+            "total_fees": float(total_fees),
+            "today": {
+                "verified": today_verifications,
+                "fees": float(today_fees)
+            }
         }
     except Exception as e:
         print(f"Error fetching verifier stats: {e}")
         return {
-            "total_verifications": 0,
-            "pending_verifications": 0,
-            "completed_today": 0,
-            "success_rate": 0,
-            "average_time": 0
+            "total": 0,
+            "valid": 0,
+            "invalid": 0, 
+            "total_fees": 0,
+            "today": {
+                "verified": 0,
+                "fees": 0
+            }
         }
 
 @router.get("/verifier-stats", response_model=VerificationStatsResponse)

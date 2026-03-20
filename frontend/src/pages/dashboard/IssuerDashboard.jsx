@@ -42,7 +42,9 @@ import {
   FiUploadCloud,
   FiFile,
   FiGrid,
-  FiBarChart2
+  FiBarChart2,
+  FiZap,
+  FiCopy
 } from 'react-icons/fi';
 import { 
   FaQrcode, 
@@ -358,6 +360,8 @@ const IssuerDashboard = () => {
       setOcrHistory(history);
     } catch (error) {
       console.error('Failed to fetch OCR history:', error);
+      // Set empty array as fallback
+      setOcrHistory([]);
     }
   }, []);
 
@@ -368,6 +372,8 @@ const IssuerDashboard = () => {
       setVerifyHistory(history);
     } catch (error) {
       console.error('Failed to fetch verification history:', error);
+      // Set empty array as fallback
+      setVerifyHistory([]);
     }
   }, []);
 
@@ -375,38 +381,78 @@ const IssuerDashboard = () => {
   const generateChartData = useCallback(async () => {
     try {
       // Issuance trend chart
-      const trendData = await certificateApi.getIssuanceTrend(dateRange);
-      setChartData(prev => ({
-        ...prev,
-        issuanceTrend: {
-          labels: trendData.labels,
-          datasets: [
-            {
+      try {
+        const trendData = await certificateApi.getIssuanceTrend(dateRange);
+        setChartData(prev => ({
+          ...prev,
+          issuanceTrend: {
+            labels: trendData.labels || [],
+            datasets: [
+              {
+                label: 'Certificates Issued',
+                data: trendData.values || [],
+                borderColor: 'rgb(34, 197, 94)',
+                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                tension: 0.4,
+                fill: true
+              }
+            ]
+          }
+        }));
+      } catch (trendError) {
+        console.error('Failed to fetch issuance trend:', trendError);
+        // Set default empty chart data
+        setChartData(prev => ({
+          ...prev,
+          issuanceTrend: {
+            labels: [],
+            datasets: [{
               label: 'Certificates Issued',
-              data: trendData.values,
+              data: [],
               borderColor: 'rgb(34, 197, 94)',
               backgroundColor: 'rgba(34, 197, 94, 0.1)',
               tension: 0.4,
               fill: true
-            }
-          ]
-        }
-      }));
+            }]
+          }
+        }));
+      }
 
       // Status distribution chart
-      const statusData = await certificateApi.getStatusDistribution();
-      setChartData(prev => ({
-        ...prev,
-        statusDistribution: {
-          labels: ['Verified', 'Pending', 'Rejected', 'Revoked'],
-          datasets: [
-            {
-              data: [
-                statusData.verified || 0,
-                statusData.pending || 0,
-                statusData.rejected || 0,
-                statusData.revoked || 0
-              ],
+      try {
+        const statusData = await certificateApi.getStatusDistribution();
+        setChartData(prev => ({
+          ...prev,
+          statusDistribution: {
+            labels: ['Verified', 'Pending', 'Rejected', 'Revoked'],
+            datasets: [
+              {
+                data: [
+                  statusData.verified || 0,
+                  statusData.pending || 0,
+                  statusData.rejected || 0,
+                  statusData.revoked || 0
+                ],
+                backgroundColor: [
+                  'rgba(34, 197, 94, 0.8)',
+                  'rgba(234, 179, 8, 0.8)',
+                  'rgba(239, 68, 68, 0.8)',
+                  'rgba(107, 114, 128, 0.8)'
+                ],
+                borderWidth: 0
+              }
+            ]
+          }
+        }));
+      } catch (statusError) {
+        console.error('Failed to fetch status distribution:', statusError);
+        // Set default empty chart data
+        setChartData(prev => ({
+          ...prev,
+          statusDistribution: {
+            labels: ['Verified', 'Pending', 'Rejected', 'Revoked'],
+            datasets: [{
+              data: [0, 0, 0, 0],
               backgroundColor: [
                 'rgba(34, 197, 94, 0.8)',
                 'rgba(234, 179, 8, 0.8)',
@@ -414,33 +460,58 @@ const IssuerDashboard = () => {
                 'rgba(107, 114, 128, 0.8)'
               ],
               borderWidth: 0
-            }
-          ]
-        }
-      }));
+            }]
+          }
+        }));
+      }
 
       // Monthly comparison chart
-      const monthlyData = await certificateApi.getMonthlyComparison();
-      setChartData(prev => ({
-        ...prev,
-        monthlyComparison: {
-          labels: monthlyData.labels,
-          datasets: [
-            {
-              label: 'This Year',
-              data: monthlyData.thisYear,
-              backgroundColor: 'rgba(34, 197, 94, 0.8)',
-              borderRadius: 6
-            },
-            {
-              label: 'Last Year',
-              data: monthlyData.lastYear,
-              backgroundColor: 'rgba(156, 163, 175, 0.5)',
-              borderRadius: 6
-            }
-          ]
-        }
-      }));
+      try {
+        const monthlyData = await certificateApi.getMonthlyComparison();
+        setChartData(prev => ({
+          ...prev,
+          monthlyComparison: {
+            labels: monthlyData.labels || [],
+            datasets: [
+              {
+                label: 'This Year',
+                data: monthlyData.thisYear || [],
+                backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                borderRadius: 6
+              },
+              {
+                label: 'Last Year',
+                data: monthlyData.lastYear || [],
+                backgroundColor: 'rgba(156, 163, 175, 0.5)',
+                borderRadius: 6
+              }
+            ]
+          }
+        }));
+      } catch (monthlyError) {
+        console.error('Failed to fetch monthly comparison:', monthlyError);
+        // Set default empty chart data
+        setChartData(prev => ({
+          ...prev,
+          monthlyComparison: {
+            labels: [],
+            datasets: [
+              {
+                label: 'This Year',
+                data: [],
+                backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                borderRadius: 6
+              },
+              {
+                label: 'Last Year',
+                data: [],
+                backgroundColor: 'rgba(156, 163, 175, 0.5)',
+                borderRadius: 6
+              }
+            ]
+          }
+        }));
+      }
     } catch (error) {
       console.error('Failed to generate chart data:', error);
     }

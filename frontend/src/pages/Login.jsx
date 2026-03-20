@@ -44,12 +44,6 @@ const Login = () => {
           return;
         }
         
-        // Skip Google OAuth for localhost unless explicitly enabled
-        if (isLocalhost && clientId.includes('your-actual-google-client-id')) {
-          console.warn('Google OAuth disabled for localhost - please configure client ID or use production environment');
-          return;
-        }
-        
         // Check if already initialized
         try {
           window.google.accounts.id.initialize({
@@ -338,16 +332,16 @@ const Login = () => {
             {/* Google Sign In */}
             <div className="space-y-3">
               <div ref={googleButtonRef} id="google-signin-button" className="flex justify-center">
-                {/* Show message when Google OAuth is disabled for localhost */}
-                {window.location.hostname === 'localhost' && (
+                {/* Show message when Google OAuth is not configured */}
+                {!process.env.REACT_APP_GOOGLE_CLIENT_ID || process.env.REACT_APP_GOOGLE_CLIENT_ID.includes('your-google-client-id') ? (
                   <div className="text-center text-xs text-gray-400 p-2">
                     <svg className="w-4 h-4 mx-auto mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    Google OAuth disabled for localhost<br/>
-                    Use regular login or configure OAuth client
+                    Google OAuth not configured<br/>
+                    Set REACT_APP_GOOGLE_CLIENT_ID in .env
                   </div>
-                )}
+                ) : null}
               </div>
               
               {googleLoading && (

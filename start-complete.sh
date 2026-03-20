@@ -98,7 +98,8 @@ echo ""
 
 # Check port availability
 echo -e "${YELLOW}🌐 Checking port availability...${NC}"
-PORTS=(8000 8545 3000 5432)
+PORTS=(8000 8545 3000)
+DB_PORT=5432
 for port in "${PORTS[@]}"; do
     if port_in_use $port; then
         echo -e "${RED}✗ Port $port is already in use${NC}"
@@ -110,6 +111,13 @@ for port in "${PORTS[@]}"; do
         echo -e "${GREEN}✓ Port $port is available${NC}"
     fi
 done
+
+# Check PostgreSQL separately (it's okay if it's already running)
+if port_in_use $DB_PORT; then
+    echo -e "${GREEN}✓ PostgreSQL is already running on port $DB_PORT${NC}"
+else
+    echo -e "${GREEN}✓ Port $DB_PORT is available for PostgreSQL${NC}"
+fi
 echo ""
 
 # Start PostgreSQL (if available)

@@ -105,6 +105,8 @@ class User(Base):
     profile_pictures = relationship("ProfilePicture", back_populates="user", cascade="all, delete-orphan")
     user_preferences = relationship("UserPreference", back_populates="user", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="user")
+    ocr_history = relationship("OCRHistory", back_populates="user", cascade="all, delete-orphan")
+
 
 class Certificate(Base):
     __tablename__ = "certificates"
@@ -144,6 +146,8 @@ class Certificate(Base):
     issuer = relationship("User", back_populates="certificates")
     verification_requests = relationship("VerificationRequest", foreign_keys="[VerificationRequest.certificate_id]", back_populates="certificate")
     university = relationship("University", back_populates="certificates")
+    ocr_history = relationship("OCRHistory", back_populates="certificate", cascade="all, delete-orphan")
+
 
 class VerificationRequest(Base):
     __tablename__ = "verification_requests"
@@ -309,6 +313,7 @@ class Session(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+
 class Invitation(Base):
     __tablename__ = "invitations"
     
@@ -323,6 +328,7 @@ class Invitation(Base):
     
     # Relationships
     inviter = relationship("User", foreign_keys=[inviter_id], back_populates="invitations_sent")
+
 
 class Badge(Base):
     __tablename__ = "badges"
@@ -486,10 +492,6 @@ class BlockchainTransaction(Base):
     confirmed_at = Column(DateTime, nullable=True)
     
     # Relationships
-    user = relationship("User")
-
-
-# Relationships
     user = relationship("User")
 
 
@@ -696,3 +698,43 @@ class NodeActivityLog(Base):
     node = relationship("BlockchainNode")
     institution = relationship("Institution")
     user = relationship("User")
+
+
+class OCRHistory(Base):
+    """
+    Track OCR processing history for certificate extraction
+    """
+    __tablename__ = "ocr_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # File information
+    filename = Column(String(500), nullable=False)
+    file_size = Column(Integer, default=0)
+    mime_type = Column(String(100), nullable=True)
+    
+    # OCR results
+    extracted_data = Column(JSON, nullable=True)  # Full extracted data
+    extracted_text = Column(Text, nullable=True)  # Raw extracted text
+    extracted_fields = Column(JSON, nullable=True)  # Structured fields
+    confidence = Column(Float, default=0)  # Overall confidence score (0-100)
+    success = Column(Boolean, default=True)
+    error_message = Column(Text, nullable=True)
+    
+    # Processing metadata
+    processing_time_ms = Column(Integer, nullable=True)  # Time taken in milliseconds
+    ocr_engine_used = Column(String(100), nullable=True)  # Which OCR engine was used
+    api_calls_made = Column(JSON, nullable=True)  # Record of API calls
+    warnings = Column(JSON, nullable=True)  # Any warnings during processing
+    
+    # Link to created certificate
+    certificate_id = Column(Integer, ForeignKey("certificates.id"), nullable=True, index=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", back_populates="ocr_history")
+    certificate = relationship("Certificate", back_populates="ocr_history")

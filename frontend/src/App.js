@@ -5,10 +5,10 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import Demo from './pages/Demo';
 import Contact from './pages/Contact';
 import OCRProcessor from './pages/OCRProcessor';
 import MpesaPayment from './pages/MpesaPayment';
+import MpesaRealPayment from './pages/MpesaRealPayment';
 import VerifyCertificate from './pages/VerifyCertificate';
 import AdminDashboard from './pages/dashboard/AdminDashboard';
 import IssuerDashboard from './pages/dashboard/IssuerDashboard';
@@ -29,10 +29,10 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/demo" element={<Demo />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/ocr" element={<OCRProcessor />} />
             <Route path="/mpesa" element={<MpesaPayment />} />
+            <Route path="/mpesa-real" element={<MpesaRealPayment />} />
             <Route path="/verify" element={<VerifyCertificate />} />
 
             {/* Dashboard redirect (role-based) */}

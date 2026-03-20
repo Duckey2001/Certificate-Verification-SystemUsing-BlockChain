@@ -1947,3 +1947,316 @@ def get_verification_result(
             "issue_date": cert.issue_date if cert else "",
         } if cert else None,
     }
+
+# ===== ISSUER ENDPOINTS =====
+@router.get("/issuer/stats")
+async def get_issuer_stats(
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+    days: int = Query(7, description="Number of days to consider for stats")
+):
+    """Get issuer statistics"""
+    try:
+        # Check if user has issuer role
+        if current_user.role not in ["issuer", "admin"]:
+            raise HTTPException(
+                status_code=403,
+                detail="Not enough permissions. Issuer role required."
+            )
+        
+        # Total certificates issued by this issuer
+        total_certificates = db.query(Certificate).filter(
+            Certificate.issuer_id == current_user.id
+        ).count()
+        
+        # Issued today
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        issued_today = db.query(Certificate).filter(
+            Certificate.issuer_id == current_user.id,
+            Certificate.created_at >= today_start
+        ).count()
+        
+        # Issued this month
+        month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        issued_this_month = db.query(Certificate).filter(
+            Certificate.issuer_id == current_user.id,
+            Certificate.created_at >= month_start
+        ).count()
+        
+        # Pending verifications for certificates issued by this issuer
+        pending_verifications = db.query(VerificationRequest).join(
+            Certificate, VerificationRequest.certificate_hash == Certificate.certificate_hash
+        ).filter(
+            Certificate.issuer_id == current_user.id,
+            VerificationRequest.verification_status == "pending"
+        ).count()
+        
+        # Verified certificates
+        verified_count = db.query(Certificate).filter(
+            Certificate.issuer_id == current_user.id,
+            Certificate.verification_status == "verified"
+        ).count()
+        
+        # Revoked certificates
+        revoked_count = db.query(Certificate).filter(
+            Certificate.issuer_id == current_user.id,
+            Certificate.status == "revoked"
+        ).count()
+        
+        return {
+            "total_certificates": total_certificates,
+            "issued_today": issued_today,
+            "issued_this_month": issued_this_month,
+            "pending_verifications": pending_verifications,
+            "verified_count": verified_count,
+            "revoked_count": revoked_count
+        }
+    except Exception as e:
+        print(f"Error fetching issuer stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/issuer/trend")
+async def get_issuance_trend(
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+    days: int = Query(7, description="Number of days to consider for trend")
+):
+    """Get certificate issuance trend for issuer"""
+    try:
+        if current_user.role not in ["issuer", "admin"]:
+            raise HTTPException(status_code=403, detail="Issuer role required")
+        
+        # Get daily issuance data for the last N days
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days)
+        
+        # Query certificates issued by this user in the date range
+        certificates = db.query(Certificate).filter(
+            Certificate.issuer_id == current_user.id,
+            Certificate.created_at >= start_date,
+            Certificate.created_at <= end_date
+        ).all()
+        
+        # Group by date
+        daily_counts = {}
+        for cert in certificates:
+            date_str = cert.created_at.strftime("%Y-%m-%d")
+            daily_counts[date_str] = daily_counts.get(date_str, 0) + 1
+        
+        # Fill missing dates with 0
+        trend_data = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime("%Y-%m-%d")
+            trend_data.append({
+                "date": date_str,
+                "count": daily_counts.get(date_str, 0)
+            })
+            current_date += timedelta(days=1)
+        
+        return trend_data
+    except Exception as e:
+        print(f"Error fetching issuance trend: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/issuer/status-distribution")
+async def get_status_distribution(
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Get certificate status distribution for issuer"""
+    try:
+        if current_user.role not in ["issuer", "admin"]:
+            raise HTTPException(status_code=403, detail="Issuer role required")
+        
+        # Count certificates by status for this issuer
+        status_counts = db.query(
+            Certificate.status,
+            func.count(Certificate.id).label('count')
+        ).filter(
+            Certificate.issuer_id == current_user.id
+        ).group_by(Certificate.status).all()
+        
+        # Format response
+        distribution = []
+        for status, count in status_counts:
+            distribution.append({
+                "status": status,
+                "count": count
+            })
+        
+        return distribution
+    except Exception as e:
+        print(f"Error fetching status distribution: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/issuer/monthly-comparison")
+async def get_monthly_comparison(
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db)
+):
+    """Get monthly certificate comparison for issuer"""
+    try:
+        if current_user.role not in ["issuer", "admin"]:
+            raise HTTPException(status_code=403, detail="Issuer role required")
+        
+        # Get last 6 months data
+        monthly_data = []
+        current_date = datetime.utcnow()
+        
+        for i in range(6):
+            month_start = current_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            if i > 0:
+                month_start = month_start - timedelta(days=month_start.day)
+            
+            month_end = month_start + timedelta(days=32)
+            month_end = month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - timedelta(microseconds=1)
+            
+            count = db.query(Certificate).filter(
+                Certificate.issuer_id == current_user.id,
+                Certificate.created_at >= month_start,
+                Certificate.created_at <= month_end
+            ).count()
+            
+            monthly_data.append({
+                "month": month_start.strftime("%Y-%m"),
+                "count": count
+            })
+            
+            current_date = month_start
+        
+        return list(reversed(monthly_data))
+    except Exception as e:
+        print(f"Error fetching monthly comparison: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/issuer/verification-history")
+async def get_verification_history(
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+    limit: int = Query(10, description="Number of records to return")
+):
+    """Get verification history for issuer's certificates"""
+    try:
+        if current_user.role not in ["issuer", "admin"]:
+            raise HTTPException(status_code=403, detail="Issuer role required")
+        
+        # Get verification requests for certificates issued by this user
+        verifications = db.query(VerificationRequest).join(
+            Certificate, VerificationRequest.certificate_hash == Certificate.certificate_hash
+        ).filter(
+            Certificate.issuer_id == current_user.id
+        ).order_by(desc(VerificationRequest.created_at)).limit(limit).all()
+        
+        history = []
+        for v in verifications:
+            cert = db.query(Certificate).filter(
+                Certificate.certificate_hash == v.certificate_hash
+            ).first()
+            
+            history.append({
+                "id": v.id,
+                "certificate_hash": v.certificate_hash,
+                "student_name": f"{cert.student_name} {cert.student_surname}" if cert else "Unknown",
+                "verification_status": v.verification_status,
+                "verification_date": v.verification_date.isoformat() if v.verification_date else None,
+                "created_at": v.created_at.isoformat()
+            })
+        
+        return history
+    except Exception as e:
+        print(f"Error fetching verification history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/issuer/export")
+async def export_certificates(
+    current_user: User = Depends(get_current_user_from_token),
+    db: Session = Depends(get_db),
+    format: str = Query("csv", description="Export format"),
+    status: Optional[str] = Query(None, description="Filter by status"),
+    start_date: Optional[str] = Query(None, description="Start date filter"),
+    end_date: Optional[str] = Query(None, description="End date filter")
+):
+    """Export certificates for issuer"""
+    try:
+        if current_user.role not in ["issuer", "admin"]:
+            raise HTTPException(status_code=403, detail="Issuer role required")
+        
+        # Build query
+        query = db.query(Certificate).filter(Certificate.issuer_id == current_user.id)
+        
+        if status:
+            query = query.filter(Certificate.status == status)
+        if start_date:
+            query = query.filter(Certificate.created_at >= start_date)
+        if end_date:
+            query = query.filter(Certificate.created_at <= end_date)
+        
+        certificates = query.all()
+        
+        # For now, return a simple response. In production, generate actual CSV/Excel files
+        return {
+            "message": f"Exporting {len(certificates)} certificates as {format}",
+            "certificates": [
+                {
+                    "id": cert.id,
+                    "student_name": cert.student_name,
+                    "student_surname": cert.student_surname,
+                    "status": cert.status,
+                    "created_at": cert.created_at.isoformat()
+                }
+                for cert in certificates
+            ]
+        }
+    except Exception as e:
+        print(f"Error exporting certificates: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ===== VERIFIER ENDPOINTS =====
+@router.get("/institutions")
+async def get_institutions(db: Session = Depends(get_db)):
+    """Get all institutions for certificate types"""
+    try:
+        # Get unique institutions from users or certificates
+        institutions = db.query(User.institution).filter(
+            User.institution.isnot(None),
+            User.institution != ""
+        ).distinct().all()
+        
+        institution_list = []
+        for inst_name in institutions:
+            inst_name = inst_name[0] if isinstance(inst_name, tuple) else inst_name
+            if inst_name:
+                institution_list.append({
+                    "id": len(institution_list) + 1,
+                    "name": inst_name,
+                    "code": inst_name.upper().replace(" ", "_")[:8]
+                })
+        
+        # Add some default institutions if none exist
+        if not institution_list:
+            institution_list = [
+                {"id": 1, "name": "Demo High School", "code": "DEMO_HS"},
+                {"id": 2, "name": "Test Academy", "code": "TEST_AC"},
+                {"id": 3, "name": "National University", "code": "NAT_UNI"}
+            ]
+        
+        return institution_list
+    except Exception as e:
+        print(f"Error fetching institutions: {e}")
+        return []
+
+@router.get("/types")
+async def get_certificate_types():
+    """Get available certificate types"""
+    try:
+        # Return mock certificate types for now
+        return [
+            {"id": 1, "name": "LGCSE Certificate", "code": "LGCSE"},
+            {"id": 2, "name": "O-Level Certificate", "code": "OLEVEL"},
+            {"id": 3, "name": "A-Level Certificate", "code": "ALEVEL"},
+            {"id": 4, "name": "Diploma Certificate", "code": "DIPLOMA"}
+        ]
+    except Exception as e:
+        print(f"Error fetching certificate types: {e}")
+        return []

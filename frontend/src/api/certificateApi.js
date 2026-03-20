@@ -98,13 +98,13 @@ export const certificateApi = {
 
   // Issuer (current user) stats
   getMyIssuerStats: async () => {
-    const response = await api.get('/issuer/stats');
+    const response = await api.get('/api/issuer/stats');
     return response.data;
   },
 
   // Issuer (current user) certificates
   getMyIssuerCertificates: async (limit = 50) => {
-    const response = await api.get('/issuer/certificates', { params: { limit } });
+    const response = await api.get('/api/issuer/certificates', { params: { limit } });
     return response.data;
   },
   

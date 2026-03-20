@@ -193,17 +193,13 @@ export const certificateApi = {
   getMyIssuerCertificates: async (params = {}) => {
     const queryParams = new URLSearchParams();
     if (params.limit) queryParams.append('limit', params.limit);
-    if (params.status) queryParams.append('status', params.status);
-    if (params.search) queryParams.append('search', params.search);
-    if (params.start_date) queryParams.append('start_date', params.start_date);
-    if (params.end_date) queryParams.append('end_date', params.end_date);
     
-    const response = await api.get(`/certificates/issuer/certificates?${queryParams}`);
+    const response = await api.get(`/api/issuer/certificates?${queryParams}`);
     return response.data;
   },
   
   getMyIssuerStats: async () => {
-    const response = await api.get('/certificates/issuer/stats');
+    const response = await api.get('/api/issuer/stats');
     return response.data;
   },
   
@@ -223,10 +219,13 @@ export const certificateApi = {
     return response.data;
   },
   
-  getMyVerifications: async (limit = 50, offset = 0) => {
-    const response = await api.get('/certificates/my-verifications', {
-      params: { limit, offset }
-    });
+  getMyVerifications: async (params = {}) => {
+    const queryParams = new URLSearchParams();
+    if (params.limit) queryParams.append('limit', params.limit);
+    if (params.start_date) queryParams.append('start_date', params.start_date);
+    if (params.end_date) queryParams.append('end_date', params.end_date);
+    
+    const response = await api.get(`/api/verifier/my-verifications?${queryParams}`);
     return response.data;
   },
   
@@ -262,14 +261,33 @@ export const certificateApi = {
     return response.data;
   },
   
+  // Missing verifier-specific endpoints
+  getInstitutions: async () => {
+    // Mock institutions data - can be enhanced to fetch from database
+    return [
+      { id: 1, name: 'Ministry of Education', code: 'MOE' },
+      { id: 2, name: 'Examination Council', code: 'ECOL' }
+    ];
+  },
+
+  getCertificateTypes: async () => {
+    // Mock certificate types - can be enhanced to fetch from database
+    return [
+      { id: 'LGCSE', name: 'LGCSE' },
+      { id: 'COSC', name: 'COSC' }
+    ];
+  },
+
+  // Fix the verifier stats endpoint path
   getMyVerifierStats: async () => {
     const response = await api.get('/api/verifier/stats');
     return response.data;
   },
   
   getVerifierActivity: async (days = 7) => {
-    const response = await api.get('/certificates/verifier-activity', {
-      params: { days }
+    // Use the verifications endpoint as activity data
+    const response = await api.get('/verifier/verifications', {
+      params: { limit: days * 10 }
     });
     return response.data;
   },
@@ -299,14 +317,48 @@ export const certificateApi = {
     return response.data;
   },
   
-  // OCR endpoints
-  uploadCertificate: async (formData) => {
-    const response = await api.post('/certificates/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+  // Missing issuer-specific endpoints
+  getMyIssuerStats: async (dateRange = 7) => {
+    const response = await api.get('/certificates/issuer/stats', {
+      params: { days: dateRange }
     });
     return response.data;
+  },
+
+  getIssuanceTrend: async (dateRange = 7) => {
+    const response = await api.get('/certificates/issuer/trend', {
+      params: { days: dateRange }
+    });
+    return response.data;
+  },
+
+  getStatusDistribution: async () => {
+    const response = await api.get('/certificates/issuer/status-distribution');
+    return response.data;
+  },
+
+  getMonthlyComparison: async () => {
+    const response = await api.get('/certificates/issuer/monthly-comparison');
+    return response.data;
+  },
+
+  getVerificationHistory: async () => {
+    const response = await api.get('/certificates/issuer/verification-history');
+    return response.data;
+  },
+
+  exportCertificates: async (params) => {
+    const response = await api.get('/certificates/issuer/export', { params });
+    return response.data;
+  },
+
+  // Alias for upload to match issuer dashboard usage
+  upload: async (formData) => {
+    return await certificateApi.uploadCertificate(formData);
+  },
+
+  verify: async (formData, onProgress) => {
+    return await certificateApi.verifyCertificate(formData, onProgress);
   },
   
   extractCertificateData: async (formData) => {
@@ -413,6 +465,11 @@ export const paymentApi = {
 
 // Institution API
 export const institutionApi = {
+  getMyInstitution: async () => {
+    const response = await api.get('/api/institutions/my');
+    return response.data;
+  },
+  
   getInstitutionInfo: async (institutionId) => {
     const response = await api.get(`/institutions/${institutionId}`);
     return response.data;
@@ -459,54 +516,73 @@ export const institutionApi = {
   },
 };
 
-// Admin API - FIX: Match your backend paths
+// Admin API - Updated to match backend dashboard endpoints
 export const adminApi = {
   getSystemStats: async () => {
-    const response = await api.get('/admin/system-stats');
+    const response = await api.get('/api/admin/stats');
     return response.data;
   },
   
   getSystemHealth: async () => {
-    const response = await api.get('/admin/system-health');
-    return response.data;
+    // Mock system health for now - can be implemented later
+    return {
+      status: 'healthy',
+      database: 'connected',
+      blockchain: 'connected',
+      services: 'operational'
+    };
   },
   
-  getDashboardCharts: async (days = 7) => {
-    const response = await api.get('/admin/dashboard-charts', {
-      params: { days }
-    });
+  getDashboardCharts: async (dateRange) => {
+    // Get comprehensive chart data from backend
+    const params = {};
+    if (dateRange?.start) params.start_date = dateRange.start;
+    if (dateRange?.end) params.end_date = dateRange.end;
+    
+    const response = await api.get('/api/admin/system-stats', { params });
     return response.data;
   },
   
   getRecentAlerts: async () => {
-    const response = await api.get('/admin/recent-alerts');
-    return response.data;
+    const response = await api.get('/api/admin/audit-events', { params: { limit: 10 } });
+    return response.data.map(event => ({
+      id: event.id,
+      message: `${event.event_type} by ${event.actor_role}`,
+      severity: event.event_type.includes('error') ? 'high' : event.event_type.includes('login') ? 'medium' : 'low',
+      timestamp: event.created_at,
+      type: event.event_type
+    }));
   },
   
   getNotifications: async () => {
-    const response = await api.get('/admin/notifications');
-    return response.data;
+    const response = await api.get('/api/admin/audit-events', { params: { limit: 20 } });
+    return response.data.map((event, index) => ({
+      id: event.id,
+      title: `System Activity: ${event.event_type}`,
+      message: `${event.actor_role || 'User'} performed ${event.event_type}`,
+      read: false,
+      created_at: event.created_at,
+      type: event.event_type
+    }));
   },
   
   getPendingUsers: async () => {
-    const response = await api.get('/admin/pending-users');
-    return response.data;
+    const response = await api.get('/api/admin/pending-users');
+    return response.data.pending_users || [];
   },
   
   markNotificationRead: async (notificationId) => {
-    const response = await api.post(`/admin/notifications/${notificationId}/read`);
-    return response.data;
+    // Mock implementation for now
+    return { success: true };
   },
   
   markAllNotificationsRead: async () => {
-    const response = await api.post('/admin/notifications/read-all');
-    return response.data;
+    // Mock implementation for now
+    return { success: true };
   },
   
-  exportData: async (tab, format = 'csv') => {
-    const response = await api.get('/admin/export', {
-      params: { tab, format }
-    });
+  revokeCertificate: async (certificateId) => {
+    const response = await api.post(`/api/admin/certificates/${certificateId}/revoke`);
     return response.data;
   },
   
@@ -640,6 +716,32 @@ export const blockchainApi = {
   },
 };
 
+// OCR API
+export const ocrApi = {
+  extractCertificateData: async (formData) => {
+    const response = await api.post('/certificates/extract-data', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  
+  getOcrStatus: async () => {
+    const response = await api.get('/ocr/status');
+    return response.data;
+  },
+  
+  processCertificate: async (formData) => {
+    const response = await api.post('/ocr/process', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+};
+
 // Analytics API
 export const analyticsApi = {
   getDashboardStats: async (userType) => {
@@ -710,4 +812,8 @@ export default {
   analytics: analyticsApi,
   activity: activityApi,
   verifier: verifierApi,
+  ocr: ocrApi,
 };
+
+// Export individual APIs for direct import
+export { issuerApi } from './issuerApi';

@@ -159,7 +159,9 @@ _cors_origins = [
     "http://127.0.0.1:8080",
     "http://localhost:8000",
     "http://10.24.42.33:3000",
-    "http://10.24.42.33:3001"
+    "http://10.24.42.33:3001",
+    "http://localhost:5173",  # Vite dev server
+    "http://127.0.0.1:5173",   # Vite dev server
 ]
 
 app.add_middleware(

@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M-Pesa USSD Popup Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .status.info {
+            background: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #bbdefb;
+        }
+
+        .status.success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+
+        input[type="text"], input[type="tel"] {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus, input[type="tel"]:focus {
+            outline: none;
+            border-color: #4caf50;
+        }
+
+        .button {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(45deg, #4caf50, #45a049);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-bottom: 10px;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+        }
+
+        .button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .button.secondary {
+            background: linear-gradient(45deg, #ff9800, #f57c00);
+        }
+
+        .button.danger {
+            background: linear-gradient(45deg, #f44336, #d32f2f);
+        }
+
+        /* M-Pesa Popup Styles */
+        .mpesa-popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .mpesa-popup {
+            background: #00875a;
+            color: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 350px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .mpesa-popup h3 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .mpesa-popup p {
+            margin-bottom: 10px;
+            line-height: 1.5;
+        }
+
+        .mpesa-popup .pin-display {
+            font-size: 32px;
+            font-weight: bold;
+            letter-spacing: 5px;
+            margin: 20px 0;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .mpesa-popup .buttons {
+            margin-top: 20px;
+        }
+
+        .mpesa-popup button {
+            background: white;
+            color: #00875a;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 0 5px;
+        }
+
+        .mpesa-popup button:hover {
+            background: #f0f0f0;
+        }
+
+        /* SMS Notification Styles */
+        .sms-notification {
+            background: #f5f5f5;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-line;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50, #45a049);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .step-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+        }
+
+        .step {
+            flex: 1;
+            text-align: center;
+            position: relative;
+        }
+
+        .step::before {
+            content: '';
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            right: -50%;
+            height: 2px;
+            background: #e0e0e0;
+            z-index: 0;
+        }
+
+        .step:last-child::before {
+            display: none;
+        }
+
+        .step.active::before {
+            background: #4caf50;
+        }
+
+        .step-number {
+            width: 30px;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            margin-bottom: 5px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .step.active .step-number {
+            background: #4caf50;
+        }
+
+        .step.completed .step-number {
+            background: #2e7d32;
+        }
+
+        .step-label {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏫 ECOL Certificate Verification</h1>
+        
+        <div class="step-indicator">
+            <div class="step active" id="step1">
+                <div class="step-number">1</div>
+                <div class="step-label">Start</div>
+            </div>
+            <div class="step" id="step2">
+                <div class="step-number">2</div>
+                <div class="step-label">Phone</div>
+            </div>
+            <div class="step" id="step3">
+                <div class="step-number">3</div>
+                <div class="step-label">PIN</div>
+            </div>
+            <div class="step" id="step4">
+                <div class="step-number">4</div>
+                <div class="step-label">Payment</div>
+            </div>
+            <div class="step" id="step5">
+                <div class="step-number">5</div>
+                <div class="step-label">Complete</div>
+            </div>
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressBar"></div>
+        </div>
+
+        <div class="status info" id="statusMessage">
+            📱 Ready to start M-Pesa verification process
+        </div>
+
+        <!-- Step 1: Start -->
+        <div id="step1Content">
+            <div class="form-group">
+                <label>Certificate Reference:</label>
+                <input type="text" id="certificateRef" value="CERT-2024-001" readonly>
+            </div>
+            <div class="form-group">
+                <label>University:</label>
+                <input type="text" id="universityName" value="National University of Lesotho" readonly>
+            </div>
+            <div class="form-group">
+                <label>Amount (LSL):</label>
+                <input type="text" id="amount" value="50.00" readonly>
+            </div>
+            <button class="button" onclick="startUSSD()">🚀 Start M-Pesa Verification</button>
+        </div>
+
+        <!-- Step 2: Phone Number -->
+        <div id="step2Content" class="hidden">
+            <div class="form-group">
+                <label for="phoneNumber">Enter your M-Pesa number:</label>
+                <input type="tel" id="phoneNumber" placeholder="26657620256" maxlength="11">
+            </div>
+            <button class="button" onclick="submitPhoneNumber()">📱 Submit Phone Number</button>
+            <button class="button secondary" onclick="resetFlow()">🔄 Cancel</button>
+        </div>
+
+        <!-- Step 3: SMS Sent -->
+        <div id="step3Content" class="hidden">
+            <div class="status info">
+                📱 SMS sent to your phone! Check your messages.
+            </div>
+            <div id="smsContent"></div>
+            <div class="form-group">
+                <label for="smsReply">Reply to SMS with PIN to confirm:</label>
+                <input type="text" id="smsReply" placeholder="Enter 4-digit PIN from SMS" maxlength="4">
+            </div>
+            <button class="button" onclick="submitSMSReply()">� Send SMS Reply</button>
+            <button class="button secondary" onclick="resendSMS()">🔄 Resend SMS</button>
+            <button class="button secondary" onclick="resetFlow()">🔄 Cancel</button>
+        </div>
+
+        <!-- Step 4: Processing -->
+        <div id="step4Content" class="hidden">
+            <div class="status info">
+                💳 Processing your payment...
+            </div>
+            <div id="paymentDetails"></div>
+            <button class="button" onclick="processPayment()" id="processPaymentBtn">💰 Process Payment</button>
+        </div>
+
+        <!-- Step 5: Complete -->
+        <div id="step5Content" class="hidden">
+            <div id="finalResult"></div>
+            <button class="button" onclick="resetFlow()">🔄 Start New Verification</button>
+        </div>
+
+        <!-- SMS Notifications -->
+        <div id="smsNotifications"></div>
+    </div>
+
+    <!-- M-Pesa Popup Overlay -->
+    <div class="mpesa-popup-overlay" id="mpesaPopup">
+        <div class="mpesa-popup">
+            <h3 id="popupTitle">M-Pesa</h3>
+            <p id="popupMessage">Loading...</p>
+            <div id="popupContent"></div>
+            <div class="buttons" id="popupButtons"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        let ussdSessionId = null;
+        let pinSessionId = null;
+        let paymentId = null;
+        let generatedPIN = null;
+
+        const BASE_URL = 'http://localhost:5000';
+
+        function showStatus(message, type = 'info') {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        function updateProgress(percentage) {
+            document.getElementById('progressBar').style.width = percentage + '%';
+        }
+
+        function showStep(step) {
+            // Hide all step contents
+            for (let i = 1; i <= 5; i++) {
+                document.getElementById(`step${i}Content`).classList.add('hidden');
+                document.getElementById(`step${i}`).classList.remove('active', 'completed');
+            }
+
+            // Show current step
+            document.getElementById(`step${step}Content`).classList.remove('hidden');
+            document.getElementById(`step${step}`).classList.add('active');
+
+            // Mark previous steps as completed
+            for (let i = 1; i < step; i++) {
+                document.getElementById(`step${i}`).classList.add('completed');
+            }
+
+            currentStep = step;
+            updateProgress((step - 1) * 25);
+        }
+
+        function showMpesaPopup(title, message, content = '', buttons = '') {
+            document.getElementById('popupTitle').textContent = title;
+            document.getElementById('popupMessage').textContent = message;
+            document.getElementById('popupContent').innerHTML = content;
+            document.getElementById('popupButtons').innerHTML = buttons;
+            document.getElementById('mpesaPopup').style.display = 'flex';
+        }
+
+        function hideMpesaPopup() {
+            document.getElementById('mpesaPopup').style.display = 'none';
+        }
+
+        function addSMSNotification(message) {
+            const smsDiv = document.createElement('div');
+            smsDiv.className = 'sms-notification';
+            smsDiv.textContent = `📱 SMS: ${message}`;
+            document.getElementById('smsNotifications').appendChild(smsDiv);
+        }
+
+        async function startUSSD() {
+            try {
+                showStatus('🚀 Initiating M-Pesa verification...', 'info');
+                
+                const response = await fetch(`${BASE_URL}/api/ussd/initiate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        certificate_ref: document.getElementById('certificateRef').value,
+                        university_name: document.getElementById('universityName').value,
+                        amount: Math.round(parseFloat(document.getElementById('amount').value) * 100) // Convert to cents
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    ussdSessionId = data.ussd_session_id;
+                    
+                    showMpesaPopup(
+                        'M-Pesa',
+                        data.message,
+                        '',
+                        '<button onclick="hideMpesaPopup(); showStep(2)">OK</button>'
+                    );
+                    
+                    showStatus('✅ USSD initiated! Please enter your phone number.', 'success');
+                    showStep(2);
+                } else {
+                    showStatus('❌ Failed to initiate USSD', 'error');
+                }
+            } catch (error) {
+                showStatus('❌ Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function submitPhoneNumber() {
+            const phoneNumber = document.getElementById('phoneNumber').value.trim();
+            
+            if (!phoneNumber) {
+                showStatus('❌ Please enter your phone number', 'error');
+                return;
+            }
+
+            try {
+                showStatus('📱 Submitting phone number...', 'info');
+                
+                const response = await fetch(`${BASE_URL}/api/ussd/enter-phone`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ussd_session_id: ussdSessionId,
+                        phone_number: phoneNumber
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    // Send SMS immediately after phone number is submitted
+                    await sendSMSFlow(phone_number);
+                } else {
+                    showStatus(`❌ ${data.error || 'Invalid phone number'}`, 'error');
+                }
+            } catch (error) {
+                showStatus('❌ Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function sendSMSFlow(phoneNumber) {
+            try {
+                showStatus('📧 Sending SMS with payment details...', 'info');
+                
+                const response = await fetch(`${BASE_URL}/api/ussd/send-pin`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ussd_session_id: ussdSessionId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    pinSessionId = data.pin_session_id;
+                    
+                    // Generate a random PIN for demo
+                    generatedPIN = Math.floor(1000 + Math.random() * 9000).toString();
+                    
+                    // Show comprehensive SMS with all details
+                    const smsMessage = `🏫 ECOL Certificate Verification
+
+Amount: 50.00 LSL
+Certificate: ${document.getElementById('certificateRef').value}
+University: ${document.getElementById('universityName').value}
+
+🔐 Your verification PIN: ${generatedPIN}
+
+This PIN expires in 5 minutes.
+Reply to this SMS with the PIN to confirm payment.
+If you didn't request this, please ignore.
+
+ECOL Verification Service
+www.ecol.org.ls`;
+                    
+                    document.getElementById('smsContent').innerHTML = `
+                        <div class="sms-notification">
+                            📱 SMS Sent to: ${phoneNumber}
+                            <hr style="margin: 10px 0; border: none; border-top: 1px solid #ddd;">
+                            <pre style="white-space: pre-wrap; font-family: monospace; font-size: 12px; margin: 0;">${smsMessage}</pre>
+                        </div>
+                    `;
+                    
+                    showMpesaPopup(
+                        'M-Pesa',
+                        '📱 SMS Sent!',
+                        `Check your phone for the verification SMS\n\nPhone: ${phoneNumber}\nPIN: ${generatedPIN}`,
+                        '<button onclick="hideMpesaPopup(); showStep(3)">OK, I see the SMS</button>'
+                    );
+                    
+                    showStatus('✅ SMS sent! Check your messages and reply with the PIN.', 'success');
+                    showStep(3);
+                } else {
+                    showStatus('❌ Failed to send SMS', 'error');
+                }
+            } catch (error) {
+                showStatus('❌ Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function sendPIN() {
+            try {
+                showStatus('📧 Sending PIN to your phone...', 'info');
+                
+                const response = await fetch(`${BASE_URL}/api/ussd/send-pin`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ussd_session_id: ussdSessionId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    pinSessionId = data.pin_session_id;
+                    
+                    // Generate a random PIN for demo (in real app, this comes from server)
+                    generatedPIN = Math.floor(1000 + Math.random() * 9000).toString();
+                    
+                    showMpesaPopup(
+                        'M-Pesa',
+                        '🔐 PIN Sent!',
+                        `<div class="pin-display">${generatedPIN}</div>
+                         <p>Check your phone for the PIN</p>
+                         <p><small>This PIN expires in 5 minutes</small></p>`,
+                        '<button onclick="hideMpesaPopup(); showStep(3)">I have the PIN</button>'
+                    );
+                    
+                    // Simulate SMS notification
+                    addSMSNotification(`🏫 ECOL Certificate Verification\nAmount: 50.00 LSL\nCertificate: ${document.getElementById('certificateRef').value}\nUniversity: ${document.getElementById('universityName').value}\n\n🔐 Your PIN: ${generatedPIN}\n\nEnter this PIN to confirm your payment.`);
+                    
+                    showStatus('✅ PIN sent! Check your phone and enter the PIN below.', 'success');
+                    showStep(3);
+                } else {
+                    showStatus('❌ Failed to send PIN', 'error');
+                }
+            } catch (error) {
+                showStatus('❌ Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function submitSMSReply() {
+            const smsReply = document.getElementById('smsReply').value.trim();
+            
+            if (!smsReply || smsReply.length !== 4) {
+                showStatus('❌ Please enter the 4-digit PIN from the SMS', 'error');
+                return;
+            }
+
+            try {
+                showStatus('� Processing SMS reply...', 'info');
+                
+                // Simulate SMS reply being sent
+                addSMSNotification(`📤 SMS Reply: ${smsReply} sent to M-Pesa`);
+                
+                // Verify the PIN
+                const response = await fetch(`${BASE_URL}/api/ussd/verify-pin`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ussd_session_id: ussdSessionId,
+                        pin: smsReply
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    paymentId = data.payment_id;
+                    
+                    showMpesaPopup(
+                        'M-Pesa',
+                        '✅ SMS Reply Received!',
+                        'Your PIN has been verified via SMS reply.',
+                        '<button onclick="hideMpesaPopup(); showStep(4)">Continue</button>'
+                    );
+                    
+                    addSMSNotification(`✅ PIN verified successfully via SMS reply!`);
+                    showStatus('✅ SMS reply verified! Ready to process payment.', 'success');
+                    
+                    // Show payment details
+                    document.getElementById('paymentDetails').innerHTML = `
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin: 15px 0;">
+                            <h4>Payment Details:</h4>
+                            <p><strong>Amount:</strong> ${document.getElementById('amount').value} LSL</p>
+                            <p><strong>Certificate:</strong> ${document.getElementById('certificateRef').value}</p>
+                            <p><strong>University:</strong> ${document.getElementById('universityName').value}</p>
+                            <p><strong>Verified via:</strong> SMS Reply</p>
+                        </div>
+                    `;
+                } else {
+                    showStatus(`❌ ${data.error || 'Invalid PIN'}`, 'error');
+                    addSMSNotification(`❌ SMS reply failed: ${data.error || 'Invalid PIN'}`);
+                }
+            } catch (error) {
+                showStatus('❌ Network error: ' + error.message, 'error');
+            }
+        }
+
+        function resendSMS() {
+            const phoneNumber = document.getElementById('phoneNumber').value.trim();
+            if (phoneNumber) {
+                sendSMSFlow(phoneNumber);
+            }
+        }
+
+        async function processPayment() {
+            try {
+                showStatus('💳 Processing payment...', 'info');
+                document.getElementById('processPaymentBtn').disabled = true;
+                
+                const response = await fetch(`${BASE_URL}/api/ussd/process-payment`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        payment_id: paymentId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showMpesaPopup(
+                        'M-Pesa',
+                        '✅ Payment Successful!',
+                        `<p>Amount: ${data.amount} LSL</p>
+                         <p>Transaction ID: ${data.transaction_id}</p>
+                         <p>Certificate: ${data.certificate_ref}</p>`,
+                        '<button onclick="hideMpesaPopup(); completeFlow()">View Details</button>'
+                    );
+                    
+                    // Simulate confirmation SMS
+                    const confirmationSMS = `✅ PAYMENT CONFIRMED
+
+Amount: ${data.amount} LSL
+To: ECOL (110799)
+Certificate: ${data.certificate_ref}
+Transaction ID: ${data.transaction_id}
+Time: ${new Date().toLocaleString()}
+From: ${document.getElementById('phoneNumber').value}
+
+Thank you for using ECOL Verification Service.
+Your certificate will be processed shortly.
+
+ECOL Verification Service
+www.ecol.org.ls`;
+                    
+                    addSMSNotification(`📱 Confirmation SMS sent with transaction details`);
+                    
+                    // Show final result with SMS confirmation
+                    document.getElementById('finalResult').innerHTML = `
+                        <div style="background: #e8f5e8; padding: 20px; border-radius: 10px; text-align: center;">
+                            <h3 style="color: #2e7d32; margin-bottom: 15px;">🎉 Verification Complete!</h3>
+                            <p><strong>Transaction ID:</strong> ${data.transaction_id}</p>
+                            <p><strong>Amount Paid:</strong> ${data.amount} LSL</p>
+                            <p><strong>Certificate:</strong> ${data.certificate_ref}</p>
+                            <p><strong>Status:</strong> <span style="color: #2e7d32;">VERIFIED</span></p>
+                            <hr style="margin: 15px 0;">
+                            <div class="sms-notification">
+                                📱 Confirmation SMS Sent:
+                                <pre style="white-space: pre-wrap; font-family: monospace; font-size: 11px; margin: 5px 0;">${confirmationSMS}</pre>
+                            </div>
+                        </div>
+                    `;
+                    
+                    showStatus('✅ Payment completed! Confirmation SMS sent.', 'success');
+                    showStep(5);
+                } else {
+                    showStatus(`❌ Payment failed: ${data.error || 'Unknown error'}`, 'error');
+                    document.getElementById('processPaymentBtn').disabled = false;
+                }
+            } catch (error) {
+                showStatus('❌ Network error: ' + error.message, 'error');
+                document.getElementById('processPaymentBtn').disabled = false;
+            }
+        }
+
+        function completeFlow() {
+            hideMpesaPopup();
+            showStep(5);
+        }
+
+        function resendPIN() {
+            sendPIN();
+        }
+
+        function resetFlow() {
+            currentStep = 1;
+            ussdSessionId = null;
+            pinSessionId = null;
+            paymentId = null;
+            generatedPIN = null;
+            
+            // Reset form inputs
+            document.getElementById('phoneNumber').value = '';
+            document.getElementById('pinInput').value = '';
+            document.getElementById('processPaymentBtn').disabled = false;
+            
+            // Clear SMS notifications
+            document.getElementById('smsNotifications').innerHTML = '';
+            
+            // Hide popup
+            hideMpesaPopup();
+            
+            // Reset to step 1
+            showStep(1);
+            showStatus('📱 Ready to start M-Pesa verification process', 'info');
+        }
+
+        // Initialize
+        showStep(1);
+    </script>
+</body>
+</html>

@@ -556,3 +556,65 @@ def verify_institution_domain(
         "institution": inst.code,
         "domain": inst.domain
     }
+
+@router.get("/my")
+def get_my_institution(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get the current user's institution information"""
+    try:
+        # Get institution from user's institution field
+        if not current_user.institution:
+            return {
+                "id": None,
+                "code": None,
+                "name": "No Institution",
+                "role": current_user.role,
+                "domain": None,
+                "address": None,
+                "contact_email": None,
+                "contact_phone": None,
+                "is_active": True,
+                "created_at": current_user.created_at.isoformat(),
+                "updated_at": current_user.updated_at.isoformat() if current_user.updated_at else None
+            }
+        
+        # Try to find institution record
+        institution = db.query(Institution).filter(
+            Institution.code == current_user.institution
+        ).first()
+        
+        if institution:
+            return {
+                "id": institution.id,
+                "code": institution.code,
+                "name": institution.name,
+                "role": institution.role,
+                "domain": institution.domain,
+                "address": institution.address,
+                "contact_email": institution.contact_email,
+                "contact_phone": institution.contact_phone,
+                "is_active": institution.is_active,
+                "created_at": institution.created_at.isoformat(),
+                "updated_at": institution.updated_at.isoformat()
+            }
+        else:
+            # Return basic info from user record
+            return {
+                "id": None,
+                "code": current_user.institution,
+                "name": current_user.institution,
+                "role": current_user.role,
+                "domain": None,
+                "address": None,
+                "contact_email": None,
+                "contact_phone": None,
+                "is_active": True,
+                "created_at": current_user.created_at.isoformat(),
+                "updated_at": current_user.updated_at.isoformat() if current_user.updated_at else None
+            }
+            
+    except Exception as e:
+        print(f"Error fetching user institution: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch institution information")

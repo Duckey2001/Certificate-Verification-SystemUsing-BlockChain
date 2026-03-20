@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Google OAuth</title>
+    <meta name="google-signin-client_id" content="1096376934639-sv1jobqblen7b0407ed5lrdkh7b7aam2.apps.googleusercontent.com">
+</head>
+<body>
+    <h1>Google OAuth Test</h1>
+    <p>Client ID: 1096376934639-sv1jobqblen7b0407ed5lrdkh7b7aam2.apps.googleusercontent.com</p>
+    
+    <div id="g_id_onload"
+         data-client_id="1096376934639-sv1jobqblen7b0407ed5lrdkh7b7aam2.apps.googleusercontent.com"
+         data-context="signin"
+         data-ux_mode="popup"
+         data-callback="handleCredentialResponse">
+    </div>
+    
+    <div id="g_id_signin"></div>
+    
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script>
+        function handleCredentialResponse(response) {
+            console.log("Success:", response);
+            document.body.innerHTML += "<h2>Success! Check console for details.</h2>";
+        }
+        
+        window.onload = function() {
+            google.accounts.id.initialize({
+                client_id: "1096376934639-sv1jobqblen7b0407ed5lrdkh7b7aam2.apps.googleusercontent.com",
+                callback: handleCredentialResponse
+            });
+            
+            google.accounts.id.renderButton(
+                document.getElementById("g_id_signin"),
+                {
+                    theme: "outline",
+                    size: "large",
+                    text: "signin_with"
+                }
+            );
+        };
+    </script>
+</body>
+</html>

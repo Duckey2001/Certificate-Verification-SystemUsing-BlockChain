@@ -2,7 +2,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
-const blockchain = require('./blockchain');
+const blockchain = require('./blockchain.js');
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const authRoutes = require('./authRoutes');
@@ -25,10 +25,10 @@ app.use(express.json());
 
 // PostgreSQL connection - configurable via environment variables
 const pool = new Pool({
-    user: process.env.POSTGRES_USER || 'diploma_admin',
+    user: process.env.POSTGRES_USER || 'certivert',
     host: process.env.POSTGRES_HOST || 'localhost',
-    database: process.env.POSTGRES_DB || 'diploma_verification',
-    password: process.env.POSTGRES_PASSWORD || 'diploma1234',
+    database: process.env.POSTGRES_DB || 'CertiVert',
+    password: process.env.POSTGRES_PASSWORD || 'certivert',
     port: process.env.POSTGRES_PORT || 5432,
     max: parseInt(process.env.PG_MAX_CONNECTIONS || '10', 10),
     idleTimeoutMillis: parseInt(process.env.PG_IDLE_TIMEOUT || '10000', 10),

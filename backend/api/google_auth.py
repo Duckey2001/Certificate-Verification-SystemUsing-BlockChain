@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, Dict, Any
 import secrets
 import hashlib
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -17,6 +18,40 @@ from auth import create_access_token, get_password_hash
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Import AuthService for logging
+class AuthService:
+    @staticmethod
+    async def log_login_activity(db: Session, user_id: str, request: Request, status: str, login_method: str):
+        """Log login activity"""
+        try:
+            login_activity = LoginActivity(
+                user_id=user_id,
+                ip_address=request.client.host,
+                user_agent=request.headers.get("user-agent"),
+                status=status,
+                login_method=login_method,
+                created_at=datetime.utcnow()
+            )
+            db.add(login_activity)
+            db.commit()
+        except Exception as e:
+            print(f"Failed to log login activity: {e}")
+
+def create_user_tokens(user: User) -> Dict[str, Any]:
+    """Create access and refresh tokens for user"""
+    access_token = create_access_token(
+        data={"sub": str(user.id), "username": user.username, "role": user.role}
+    )
+    refresh_token = create_refresh_token(
+        data={"sub": str(user.id), "username": user.username}
+    )
+    
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60  # Convert to seconds
+    }
 
 router = APIRouter(prefix="/api/auth/google", tags=["google-auth"])
 

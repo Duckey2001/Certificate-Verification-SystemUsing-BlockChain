@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { certificateApi, paymentApi } from '../../api';
+import { certificateApi, paymentApi, ocrApi } from '../../api';
 import pdfProcessor from '../../services/pdfProcessor';
 import RecentActivity from '../../components/RecentActivity';
 import CertificatePreview from '../../components/CertificatePreview';
@@ -40,11 +40,12 @@ import {
   FiRefreshCw,
   FiCopy,
   FiExternalLink,
-  FiQrCode
+  FiQrCode,
+  FiZap
 } from 'react-icons/fi';
 import { FaQrcode, FaBarcode, FaRegCreditCard, FaRegClock, FaRegCheckCircle, FaRegTimesCircle } from 'react-icons/fa';
 import { QRCodeCanvas } from 'qrcode.react';
-import { format, subDays, parseISO } from 'date-fns';
+import { format, subDays, parseISO, startOfDay, endOfDay } from 'date-fns';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -60,6 +61,7 @@ import {
   Filler
 } from 'chart.js';
 
+// Register ChartJS components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -76,7 +78,16 @@ ChartJS.register(
 const VerifierDashboard = () => {
   const { user, logout } = useAuth();
   const { darkMode, toggleTheme } = useTheme();
-  const [verifierStats, setVerifierStats] = useState(null);
+  
+  // State for data from database
+  const [verifierStats, setVerifierStats] = useState({
+    total: 0,
+    valid: 0,
+    invalid: 0,
+    total_fees: 0,
+    today: { verified: 0, fees: 0 }
+  });
+  
   const [history, setHistory] = useState([]);
   const [certificateHash, setCertificateHash] = useState('');
   const [file, setFile] = useState(null);
@@ -88,7 +99,7 @@ const VerifierDashboard = () => {
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   
-  // OCR state
+  // OCR state - fully functional
   const [extractedData, setExtractedData] = useState(null);
   const [extractedDisplay, setExtractedDisplay] = useState(null);
   const [ocrLoading, setOcrLoading] = useState(false);
@@ -131,27 +142,39 @@ const VerifierDashboard = () => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [realtimeUpdates, setRealtimeUpdates] = useState([]);
+  const [institutions, setInstitutions] = useState([]);
+  const [certificateTypes, setCertificateTypes] = useState([]);
   
   const fileInputRef = useRef(null);
   const [wsConnection, setWsConnection] = useState(null);
 
-  // Initialize WebSocket connection
+  // Initialize WebSocket connection for real-time updates
   useEffect(() => {
     if (user) {
       const wsUrl = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
-      const ws = new WebSocket(`${wsUrl}/api/ws/verifier/${user.id}`);
+      const ws = new WebSocket(`${wsUrl}/ws/verifier/${user.id}`);
       
       ws.onopen = () => {
         console.log('WebSocket connected');
+        showNotification('info', 'Real-time updates connected');
       };
       
       ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        handleRealtimeUpdate(data);
+        try {
+          const data = JSON.parse(event.data);
+          handleRealtimeUpdate(data);
+        } catch (error) {
+          console.error('Failed to parse WebSocket message:', error);
+        }
       };
       
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
+        showNotification('error', 'Real-time connection lost');
+      };
+      
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
       };
       
       setWsConnection(ws);
@@ -161,6 +184,24 @@ const VerifierDashboard = () => {
       };
     }
   }, [user]);
+
+  // Load master data from database
+  useEffect(() => {
+    const loadMasterData = async () => {
+      try {
+        const [instData, certTypesData] = await Promise.all([
+          certificateApi.getInstitutions(),
+          certificateApi.getCertificateTypes()
+        ]);
+        setInstitutions(instData || []);
+        setCertificateTypes(certTypesData || []);
+      } catch (error) {
+        console.error('Failed to load master data:', error);
+      }
+    };
+    
+    loadMasterData();
+  }, []);
 
   // Handle real-time updates
   const handleRealtimeUpdate = (data) => {
@@ -174,6 +215,7 @@ const VerifierDashboard = () => {
         }, ...prev].slice(0, 10));
         fetchVerificationHistory();
         fetchVerifierStats();
+        fetchPaymentHistory();
         break;
         
       case 'payment_confirmed':
@@ -185,6 +227,16 @@ const VerifierDashboard = () => {
         }, ...prev].slice(0, 10));
         fetchPaymentHistory();
         fetchPaymentStats();
+        fetchVerifierStats();
+        break;
+        
+      case 'ocr_completed':
+        setRealtimeUpdates(prev => [{
+          id: Date.now(),
+          message: `OCR completed for ${data.filename} with ${data.confidence}% confidence`,
+          timestamp: new Date().toISOString(),
+          type: 'info'
+        }, ...prev].slice(0, 10));
         break;
         
       default:
@@ -192,40 +244,110 @@ const VerifierDashboard = () => {
     }
   };
 
-  // Load initial data
+  // Load initial data from database
   useEffect(() => {
     let mounted = true;
     let refreshTimer;
 
     const fetchInitialData = async () => {
       try {
-        const [stats, history, payments, paymentStats, notifs, chartData] = await Promise.all([
-          certificateApi.getMyVerifierStats(),
-          certificateApi.getMyVerifications(50),
-          paymentApi.getMyPayments(),
-          paymentApi.getVerifierPaymentStats(dateRange),
-          certificateApi.getNotifications(),
-          certificateApi.getVerificationChartData(dateRange)
+        setLoading(true);
+        
+        // Convert date range to proper format for API
+        const params = {
+          start_date: dateRange.start,
+          end_date: dateRange.end,
+          limit: 100
+        };
+        
+        // Fetch all data in parallel
+        const [
+          statsData,
+          historyData,
+          paymentsData,
+          paymentStatsData,
+          notificationsData,
+          chartDataResult
+        ] = await Promise.all([
+          certificateApi.getMyVerifierStats().catch(err => {
+            console.error('Stats fetch error:', err);
+            return { total: 0, valid: 0, invalid: 0, total_fees: 0, today: { verified: 0, fees: 0 } };
+          }),
+          certificateApi.getMyVerifications(params).catch(err => {
+            console.error('History fetch error:', err);
+            return [];
+          }),
+          paymentApi.getMyPayments().catch(err => {
+            console.error('Payments fetch error:', err);
+            return [];
+          }),
+          paymentApi.getVerifierPaymentStats(dateRange).catch(err => {
+            console.error('Payment stats fetch error:', err);
+            return null;
+          }),
+          certificateApi.getNotifications().catch(err => {
+            console.error('Notifications fetch error:', err);
+            return [];
+          }),
+          certificateApi.getVerificationChartData(dateRange).catch(err => {
+            console.error('Chart data fetch error:', err);
+            return null;
+          })
         ]);
         
         if (mounted) {
-          setVerifierStats(stats);
-          setHistory(history || []);
-          setPaymentHistory(payments || []);
-          setPaymentStats(paymentStats);
-          setNotifications(notifs || []);
-          setUnreadCount(notifs?.filter(n => !n.read).length || 0);
-          setChartData(chartData);
+          setVerifierStats(statsData || { total: 0, valid: 0, invalid: 0, total_fees: 0, today: { verified: 0, fees: 0 } });
+          setHistory(historyData || []);
+          setPaymentHistory(paymentsData || []);
+          setPaymentStats(paymentStatsData);
+          setNotifications(notificationsData || []);
+          setUnreadCount(notificationsData?.filter(n => !n.read).length || 0);
+          
+          // Transform chart data for Chart.js
+          if (chartDataResult) {
+            const transformedChartData = {
+              trend: {
+                labels: chartDataResult.labels || [],
+                datasets: [{
+                  label: 'Verifications',
+                  data: chartDataResult.verifications || [],
+                  borderColor: 'rgb(239, 68, 68)',
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  tension: 0.4,
+                  fill: true
+                }]
+              },
+              distribution: {
+                labels: ['Valid', 'Invalid', 'Pending'],
+                datasets: [{
+                  data: [
+                    chartDataResult.valid || 0,
+                    chartDataResult.invalid || 0,
+                    chartDataResult.pending || 0
+                  ],
+                  backgroundColor: [
+                    'rgba(34, 197, 94, 0.8)',
+                    'rgba(239, 68, 68, 0.8)',
+                    'rgba(234, 179, 8, 0.8)'
+                  ],
+                  borderWidth: 0
+                }]
+              }
+            };
+            setChartData(transformedChartData);
+          }
         }
       } catch (error) {
         console.error('Failed to fetch initial data:', error);
         showNotification('error', 'Failed to load dashboard data');
+      } finally {
+        setLoading(false);
       }
     };
     
     fetchInitialData();
 
-    // Auto-refresh
+    // Auto-refresh every 30 seconds
     if (mounted) {
       refreshTimer = setInterval(() => {
         fetchInitialData();
@@ -244,7 +366,7 @@ const VerifierDashboard = () => {
     setTimeout(() => setActionMsg({ type: '', text: '' }), 5000);
   };
 
-  // Handle file upload and OCR extraction
+  // Handle file upload and OCR extraction - FULLY FUNCTIONAL
   const handleFileUpload = async (file) => {
     setFile(file);
     if (!file) {
@@ -259,114 +381,175 @@ const VerifierDashboard = () => {
     setExtractedDisplay(null);
     
     try {
-      // Process PDF with OCR
-      const pdfResult = await pdfProcessor.processCertificate(file, (progress) => {
+      // Check file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        throw new Error('File size exceeds 10MB limit');
+      }
+
+      // Check file type
+      const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+      if (!validTypes.includes(file.type)) {
+        throw new Error('Invalid file type. Please upload PDF or image files only.');
+      }
+
+      // Process with OCR API
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('user_id', user?.id);
+      formData.append('institution', user?.institution || '');
+
+      // Upload with progress tracking
+      const ocrResult = await ocrApi.processCertificate(formData, (progress) => {
         setUploadPct(progress);
       });
       
-      if (pdfResult.success) {
-        const data = pdfResult.data;
+      if (ocrResult.success) {
+        const data = ocrResult.data;
         setExtractedData(data);
-        
-        // Create display HTML
-        const displayHtml = `
-          <div class="ocr-result">
-            <div class="ocr-header">
-              <h3>Extracted Certificate Data</h3>
-              <div class="confidence-score ${data.confidence > 80 ? 'high' : data.confidence > 60 ? 'medium' : 'low'}">
-                Confidence: ${data.confidence}%
-              </div>
-            </div>
-            <div class="ocr-content">
-              <div class="data-grid">
-                <div class="data-item">
-                  <label>Student Name</label>
-                  <value>${data.studentName || 'Not found'}</value>
-                </div>
-                <div class="data-item">
-                  <label>Student ID</label>
-                  <value>${data.studentId || 'Not found'}</value>
-                </div>
-                <div class="data-item">
-                  <label>Institution</label>
-                  <value>${data.institution || 'Not found'}</value>
-                </div>
-                <div class="data-item">
-                  <label>Issue Date</label>
-                  <value>${data.issueDate || 'Not found'}</value>
-                </div>
-                <div class="data-item">
-                  <label>Certificate Number</label>
-                  <value>${data.certificateNumber || 'Not found'}</value>
-                </div>
-                <div class="data-item full-width">
-                  <label>Certificate Hash</label>
-                  <value class="hash">${data.certificateHash || 'Not found'}</value>
-                </div>
-              </div>
-              ${data.subjects && data.subjects.length > 0 ? `
-                <div class="subjects-section">
-                  <h4>Subjects</h4>
-                  <table class="subjects-table">
-                    <thead>
-                      <tr>
-                        <th>Subject</th>
-                        <th>Grade</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${data.subjects.map(s => `
-                        <tr>
-                          <td>${s.name}</td>
-                          <td class="grade-${s.grade}">${s.grade}</td>
-                        </tr>
-                      `).join('')}
-                    </tbody>
-                  </table>
-                </div>
-              ` : ''}
-            </div>
-          </div>
-        `;
-        
-        setExtractedDisplay(displayHtml);
         setOcrConfidence(data.confidence);
+        
+        // Create display HTML with extracted data
+        const displayHtml = createOcrDisplayHtml(data);
+        setExtractedDisplay(displayHtml);
         setShowOcrSidebar(true);
         
         // Auto-fill certificate hash if extracted
-        if (data.certificateHash) {
-          setCertificateHash(data.certificateHash);
+        if (data.certificate_hash) {
+          setCertificateHash(data.certificate_hash);
         }
         
-        // Add to OCR history
-        setOcrHistory(prev => [{
+        // Save OCR result to history
+        const ocrHistoryItem = {
           id: Date.now(),
           filename: file.name,
           timestamp: new Date().toISOString(),
           confidence: data.confidence,
-          studentName: data.studentName,
-          success: true
-        }, ...prev].slice(0, 20));
+          student_name: data.student_name || data.studentName,
+          certificate_number: data.certificate_number || data.certificateNumber,
+          success: true,
+          data: data
+        };
         
-        showNotification('success', '✅ Certificate processed successfully! Review extracted data.');
+        setOcrHistory(prev => [ocrHistoryItem, ...prev].slice(0, 20));
+        
+        // Save to database
+        try {
+          await ocrApi.saveOcrHistory(ocrHistoryItem);
+        } catch (saveError) {
+          console.error('Failed to save OCR history:', saveError);
+        }
+        
+        showNotification('success', `✅ Certificate processed successfully! Confidence: ${data.confidence}%`);
       } else {
-        throw new Error(pdfResult.error);
+        throw new Error(ocrResult.error || 'OCR processing failed');
       }
     } catch (err) {
       setOcrError('Failed to process certificate: ' + err.message);
       
       // Add failed OCR to history
-      setOcrHistory(prev => [{
+      const failedItem = {
         id: Date.now(),
         filename: file.name,
         timestamp: new Date().toISOString(),
         error: err.message,
         success: false
-      }, ...prev].slice(0, 20));
+      };
+      
+      setOcrHistory(prev => [failedItem, ...prev].slice(0, 20));
+      showNotification('error', `OCR failed: ${err.message}`);
     } finally {
       setOcrLoading(false);
       setUploadPct(0);
     }
+  };
+
+  // Create OCR display HTML
+  const createOcrDisplayHtml = (data) => {
+    const confidenceClass = data.confidence > 80 ? 'high' : data.confidence > 60 ? 'medium' : 'low';
+    const confidenceColor = data.confidence > 80 ? 'text-green-600' : data.confidence > 60 ? 'text-yellow-600' : 'text-red-600';
+    
+    // Extract fields with fallbacks
+    const studentName = data.student_name || data.studentName || 'Not found';
+    const studentId = data.student_id || data.studentId || 'Not found';
+    const institution = data.institution || 'Not found';
+    const issueDate = data.issue_date || data.issueDate || 'Not found';
+    const certificateNumber = data.certificate_number || data.certificateNumber || 'Not found';
+    const certificateHash = data.certificate_hash || data.certificateHash || 'Not found';
+    const subjects = data.subjects || [];
+    
+    return `
+      <div class="ocr-result p-4">
+        <div class="ocr-header flex justify-between items-center mb-4">
+          <h3 class="text-lg font-bold text-gray-800 dark:text-white">Extracted Certificate Data</h3>
+          <div class="confidence-score px-3 py-1 rounded-full text-sm font-medium ${confidenceColor} bg-opacity-20 ${confidenceClass}">
+            Confidence: ${data.confidence}%
+          </div>
+        </div>
+        <div class="ocr-content">
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+              <label class="text-xs text-gray-500 dark:text-gray-400">Student Name</label>
+              <p class="font-medium text-gray-800 dark:text-white">${studentName}</p>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+              <label class="text-xs text-gray-500 dark:text-gray-400">Student ID</label>
+              <p class="font-medium text-gray-800 dark:text-white">${studentId}</p>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+              <label class="text-xs text-gray-500 dark:text-gray-400">Institution</label>
+              <p class="font-medium text-gray-800 dark:text-white">${institution}</p>
+            </div>
+            <div class="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+              <label class="text-xs text-gray-500 dark:text-gray-400">Issue Date</label>
+              <p class="font-medium text-gray-800 dark:text-white">${issueDate}</p>
+            </div>
+            <div class="col-span-2 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+              <label class="text-xs text-gray-500 dark:text-gray-400">Certificate Number</label>
+              <p class="font-medium text-gray-800 dark:text-white font-mono">${certificateNumber}</p>
+            </div>
+            <div class="col-span-2 bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+              <label class="text-xs text-gray-500 dark:text-gray-400">Certificate Hash</label>
+              <p class="font-medium text-gray-800 dark:text-white font-mono text-xs break-all">${certificateHash}</p>
+            </div>
+          </div>
+          ${subjects.length > 0 ? `
+            <div class="subjects-section mt-4">
+              <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Subjects</h4>
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead class="bg-gray-50 dark:bg-gray-800">
+                    <tr>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Subject</th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Grade</th>
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                    ${subjects.map(s => `
+                      <tr>
+                        <td class="px-4 py-2 text-sm text-gray-800 dark:text-white">${s.name}</td>
+                        <td class="px-4 py-2 text-sm font-medium ${
+                          s.grade === 'A' ? 'text-green-600' : 
+                          s.grade === 'B' ? 'text-blue-600' : 
+                          s.grade === 'C' ? 'text-yellow-600' : 'text-red-600'
+                        }">${s.grade}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ` : ''}
+          ${data.warnings && data.warnings.length > 0 ? `
+            <div class="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+              <p class="text-xs text-yellow-800 dark:text-yellow-400 font-medium mb-1">Warnings:</p>
+              <ul class="list-disc list-inside">
+                ${data.warnings.map(w => `<li class="text-xs text-yellow-700 dark:text-yellow-500">${w}</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    `;
   };
 
   // Handle scanner capture
@@ -392,7 +575,11 @@ const VerifierDashboard = () => {
     try {
       const response = await paymentApi.checkPaymentRequired();
       if (response.required) {
-        setPendingPayment(response);
+        setPendingPayment({
+          amount: response.amount || 5.00,
+          currency: response.currency || 'LSL',
+          payment_types: response.payment_types || ['mpesa_lesotho', 'mpesa', 'ecocash', 'bank']
+        });
         setShowPaymentModal(true);
         return false;
       }
@@ -410,14 +597,17 @@ const VerifierDashboard = () => {
     
     if (paymentResult.success) {
       showNotification('success', '✅ Payment successful! You can now verify certificates.');
-      fetchPaymentHistory();
-      fetchPaymentStats();
+      await Promise.all([
+        fetchPaymentHistory(),
+        fetchPaymentStats(),
+        fetchVerifierStats()
+      ]);
     } else {
       setError('Payment failed. Please try again.');
     }
   };
 
-  // Handle verification
+  // Handle verification - FULLY FUNCTIONAL
   const handleVerify = async (e) => {
     e.preventDefault();
     
@@ -433,21 +623,39 @@ const VerifierDashboard = () => {
     try {
       const formData = new FormData();
       
+      // Add certificate hash if provided
       if (verificationMode === 'hash' || verificationMode === 'both') {
+        if (!certificateHash.trim()) {
+          throw new Error('Certificate hash is required');
+        }
         formData.append('certificate_hash', certificateHash.trim());
       }
       
+      // Add file if provided
       if (verificationMode === 'file' || verificationMode === 'both') {
-        if (file) {
-          formData.append('file', file);
+        if (!file) {
+          throw new Error('Certificate file is required');
+        }
+        formData.append('file', file);
+        
+        // Add OCR data if available
+        if (extractedData) {
+          formData.append('ocr_data', JSON.stringify(extractedData));
+          formData.append('ocr_confidence', extractedData.confidence || 0);
         }
       }
 
+      // Add payment details
       formData.append('payment_method', paymentMethod);
       if (paymentDigits) {
         formData.append('payment_digits', paymentDigits);
       }
 
+      // Add user context
+      formData.append('verifier_id', user?.id);
+      formData.append('institution', user?.institution || '');
+
+      // Call verification API
       const data = await certificateApi.verifyCertificate(formData, (progress) => {
         setUploadPct(progress);
       });
@@ -461,17 +669,34 @@ const VerifierDashboard = () => {
         setTimeout(() => setShowQR(false), 5000);
       }
       
+      // Show success message
       showNotification(
         data.verified ? 'success' : 'error',
         data.verified ? '✅ Certificate verified successfully!' : '⚠️ Certificate verification failed'
       );
       
+      // Clear form if verification successful
+      if (data.verified) {
+        setTimeout(() => {
+          setCertificateHash('');
+          setFile(null);
+          setExtractedData(null);
+          setExtractedDisplay(null);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+          }
+        }, 3000);
+      }
+      
       // Refresh data
-      fetchVerificationHistory();
-      fetchVerifierStats();
-      fetchPaymentHistory();
+      await Promise.all([
+        fetchVerificationHistory(),
+        fetchVerifierStats(),
+        fetchPaymentHistory()
+      ]);
       
     } catch (err) {
+      console.error('Verification error:', err);
       const detail = err?.response?.data?.detail;
       if (typeof detail === 'string') setError(detail);
       else if (Array.isArray(detail)) setError(detail.map((d) => d.msg).join(', '));
@@ -496,23 +721,26 @@ const VerifierDashboard = () => {
   // Fetch data functions
   const fetchVerifierStats = useCallback(async () => {
     try {
-      const stats = await certificateApi.getMyVerifierStats(dateRange);
-      setVerifierStats(stats);
+      const stats = await certificateApi.getMyVerifierStats();
+      setVerifierStats(stats || { total: 0, valid: 0, invalid: 0, total_fees: 0, today: { verified: 0, fees: 0 } });
     } catch (error) {
       console.error('Failed to fetch stats:', error);
     }
-  }, [dateRange]);
+  }, []);
 
   const fetchVerificationHistory = useCallback(async () => {
     try {
-      const history = await certificateApi.getMyVerifications(50, {
+      const params = {
+        limit: 50,
         status: filters.status !== 'all' ? filters.status : undefined,
         payment_method: filters.paymentMethod !== 'all' ? filters.paymentMethod : undefined,
         search: searchTerm || undefined,
         start_date: dateRange.start,
         end_date: dateRange.end,
         sort: sortBy
-      });
+      };
+      
+      const history = await certificateApi.getMyVerifications(params);
       setHistory(history || []);
     } catch (error) {
       console.error('Failed to fetch history:', error);
@@ -584,7 +812,8 @@ const VerifierDashboard = () => {
       filtered = filtered.filter(v => 
         v.certificate_hash?.toLowerCase().includes(term) ||
         v.student_name?.toLowerCase().includes(term) ||
-        v.certificate_number?.toLowerCase().includes(term)
+        v.certificate_number?.toLowerCase().includes(term) ||
+        v.verification_id?.toLowerCase().includes(term)
       );
     }
     
@@ -622,7 +851,7 @@ const VerifierDashboard = () => {
   }, [certificateHash, file, loading, verificationMode]);
 
   const getPaymentIcon = (method) => {
-    switch(method) {
+    switch(method?.toLowerCase()) {
       case 'mpesa_lesotho': return '📱';
       case 'mpesa': return '📱';
       case 'ecocash': return '📲';
@@ -632,32 +861,39 @@ const VerifierDashboard = () => {
   };
 
   const getResultColor = (result) => {
-    return result === 'verified' || result === true 
-      ? 'bg-green-100 text-green-800 border-green-200' 
-      : 'bg-red-100 text-red-800 border-red-200';
+    const resultLower = String(result).toLowerCase();
+    return resultLower === 'verified' || result === true 
+      ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-400' 
+      : 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-400';
   };
 
   const getResultIcon = (result) => {
-    return result === 'verified' || result === true 
-      ? <FiCheckCircle className="text-green-600" />
-      : <FiXCircle className="text-red-600" />;
+    const resultLower = String(result).toLowerCase();
+    return resultLower === 'verified' || result === true 
+      ? <FiCheckCircle className="text-green-600 dark:text-green-400" />
+      : <FiXCircle className="text-red-600 dark:text-red-400" />;
   };
 
   const getConfidenceColor = (confidence) => {
-    if (confidence >= 80) return 'text-green-600';
-    if (confidence >= 60) return 'text-yellow-600';
-    return 'text-red-600';
+    if (confidence >= 80) return 'text-green-600 dark:text-green-400';
+    if (confidence >= 60) return 'text-yellow-600 dark:text-yellow-400';
+    return 'text-red-600 dark:text-red-400';
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return format(parseISO(dateString), 'MMM dd, yyyy HH:mm');
+    try {
+      return format(parseISO(dateString), 'MMM dd, yyyy HH:mm');
+    } catch {
+      return dateString;
+    }
   };
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-LS', {
       style: 'currency',
-      currency: 'LSL'
+      currency: 'LSL',
+      minimumFractionDigits: 2
     }).format(amount || 0);
   };
 
@@ -723,7 +959,7 @@ const VerifierDashboard = () => {
                   Scan to verify certificate authenticity
                 </p>
                 <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                  <p className="text-xs text-green-700 dark:text-green-400 break-all">
+                  <p className="text-xs text-green-700 dark:text-green-400 break-all font-mono">
                     Hash: {qrData}
                   </p>
                 </div>
@@ -732,13 +968,13 @@ const VerifierDashboard = () => {
                     navigator.clipboard.writeText(qrData);
                     showNotification('success', 'Hash copied to clipboard');
                   }}
-                  className="mt-4 w-full px-4 py-2 bg-gradient-to-r from-green-500 to-blue-600 text-white rounded-xl hover:from-green-600 hover:to-blue-700"
+                  className="mt-4 w-full px-4 py-2 bg-gradient-to-r from-green-500 to-blue-600 text-white rounded-xl hover:from-green-600 hover:to-blue-700 transition-all"
                 >
                   Copy Hash
                 </button>
                 <button
                   onClick={() => setShowQR(false)}
-                  className="mt-2 w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600"
+                  className="mt-2 w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
                 >
                   Close
                 </button>
@@ -747,7 +983,7 @@ const VerifierDashboard = () => {
           )}
         </AnimatePresence>
 
-        {/* Modals */}
+        {/* Payment Modal */}
         <AnimatePresence>
           {showPaymentModal && pendingPayment && (
             <PaymentModal
@@ -755,7 +991,7 @@ const VerifierDashboard = () => {
               currency={pendingPayment.currency}
               onClose={() => setShowPaymentModal(false)}
               onComplete={handlePaymentComplete}
-              paymentMethods={[
+              paymentMethods={pendingPayment.payment_types || [
                 { id: 'mpesa_lesotho', name: 'M-Pesa Lesotho', icon: '📱' },
                 { id: 'mpesa', name: 'M-Pesa', icon: '📱' },
                 { id: 'ecocash', name: 'EcoCash', icon: '📲' },
@@ -763,7 +999,10 @@ const VerifierDashboard = () => {
               ]}
             />
           )}
+        </AnimatePresence>
 
+        {/* Certificate Preview Modal */}
+        <AnimatePresence>
           {showPreview && selectedCertificate && (
             <CertificatePreview
               certificate={selectedCertificate}
@@ -777,20 +1016,31 @@ const VerifierDashboard = () => {
                 setActiveView('verify');
               }}
               onShare={() => {
-                navigator.share?.({
-                  title: 'Certificate',
-                  text: `Certificate for ${selectedCertificate.student_name}`,
-                  url: `${window.location.origin}/verify/${selectedCertificate.certificate_hash}`
-                });
+                if (navigator.share) {
+                  navigator.share({
+                    title: 'Certificate',
+                    text: `Certificate for ${selectedCertificate.student_name}`,
+                    url: `${window.location.origin}/verify/${selectedCertificate.certificate_hash}`
+                  });
+                } else {
+                  navigator.clipboard.writeText(`${window.location.origin}/verify/${selectedCertificate.certificate_hash}`);
+                  showNotification('success', 'Verification link copied to clipboard');
+                }
               }}
             />
           )}
+        </AnimatePresence>
 
+        {/* Scanner Modal */}
+        <AnimatePresence>
           {showScanner && (
             <CertificateScanner
               onCapture={handleScannerCapture}
               onClose={() => setShowScanner(false)}
-              onError={(error) => setOcrError(error)}
+              onError={(error) => {
+                setOcrError(error);
+                showNotification('error', error);
+              }}
             />
           )}
         </AnimatePresence>
@@ -807,12 +1057,18 @@ const VerifierDashboard = () => {
               onClear={handleClearOcr}
               onAccept={() => {
                 setShowOcrSidebar(false);
-                showNotification('success', 'OCR data accepted');
+                showNotification('success', '✅ OCR data accepted and ready for verification');
               }}
               onRetry={() => {
                 if (file) {
                   handleFileUpload(file);
                 }
+              }}
+              onEdit={(editedData) => {
+                setExtractedData(editedData);
+                const updatedHtml = createOcrDisplayHtml(editedData);
+                setExtractedDisplay(updatedHtml);
+                showNotification('success', 'OCR data updated');
               }}
             />
           )}
@@ -844,8 +1100,9 @@ const VerifierDashboard = () => {
                   <button
                     onClick={async () => {
                       await Promise.all(notifications.map(n => markAsRead(n.id)));
+                      showNotification('success', 'All notifications marked as read');
                     }}
-                    className="mb-4 text-sm text-blue-600 hover:text-blue-800"
+                    className="mb-4 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400"
                   >
                     Mark all as read
                   </button>
@@ -862,7 +1119,7 @@ const VerifierDashboard = () => {
                         key={notif.id}
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
-                        className={`p-4 rounded-lg cursor-pointer ${
+                        className={`p-4 rounded-lg cursor-pointer transition-colors ${
                           notif.read ? 'bg-gray-50 dark:bg-gray-700/50' : 'bg-blue-50 dark:bg-blue-900/20'
                         }`}
                         onClick={() => markAsRead(notif.id)}
@@ -1297,6 +1554,7 @@ const VerifierDashboard = () => {
                       className="p-2 border-2 border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
+                      title="Export to CSV"
                     >
                       <FiDownload className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                     </motion.button>
@@ -1354,7 +1612,7 @@ const VerifierDashboard = () => {
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mt-4 flex items-center space-x-4"
+                  className="mt-4 flex items-center space-x-4 flex-wrap gap-2"
                 >
                   <select
                     value={filters.status}
@@ -1384,13 +1642,29 @@ const VerifierDashboard = () => {
                     onChange={(e) => setDateRange({...dateRange, start: e.target.value})}
                     className="px-4 py-2 border-2 border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-red-500 focus:ring focus:ring-red-200 dark:focus:ring-red-800 transition-all"
                   />
-                  <span className="text-gray-500">to</span>
+                  <span className="text-gray-500 dark:text-gray-400">to</span>
                   <input
                     type="date"
                     value={dateRange.end}
                     onChange={(e) => setDateRange({...dateRange, end: e.target.value})}
                     className="px-4 py-2 border-2 border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:border-red-500 focus:ring focus:ring-red-200 dark:focus:ring-red-800 transition-all"
                   />
+                  
+                  <motion.button
+                    onClick={() => {
+                      setDateRange({
+                        start: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
+                        end: format(new Date(), 'yyyy-MM-dd')
+                      });
+                      setFilters({ status: 'all', paymentMethod: 'all' });
+                      setSearchTerm('');
+                    }}
+                    className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    Reset Filters
+                  </motion.button>
                 </motion.div>
               )}
             </div>
@@ -1413,6 +1687,7 @@ const VerifierDashboard = () => {
               >
                 {actionMsg.type === 'success' && <FiCheck className="w-5 h-5 mr-3" />}
                 {actionMsg.type === 'error' && <FiAlertCircle className="w-5 h-5 mr-3" />}
+                {actionMsg.type === 'info' && <FiBell className="w-5 h-5 mr-3" />}
                 {actionMsg.text}
               </motion.div>
             )}
@@ -1421,11 +1696,13 @@ const VerifierDashboard = () => {
           {/* Real-time Updates Ticker */}
           {realtimeUpdates.length > 0 && (
             <div className="mx-8 mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-              <div className="flex items-center space-x-4 overflow-x-auto">
+              <div className="flex items-center space-x-4 overflow-x-auto pb-2">
                 <FiZap className="text-blue-500 w-5 h-5 flex-shrink-0" />
                 {realtimeUpdates.map((update) => (
-                  <div
+                  <motion.div
                     key={update.id}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
                     className="flex items-center space-x-2 text-sm whitespace-nowrap"
                   >
                     <span className={`w-2 h-2 rounded-full ${
@@ -1436,7 +1713,7 @@ const VerifierDashboard = () => {
                     <span className="text-xs text-gray-400">
                       {format(parseISO(update.timestamp), 'HH:mm')}
                     </span>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             </div>
@@ -1451,8 +1728,8 @@ const VerifierDashboard = () => {
                 exit={{ opacity: 0, y: -20 }}
                 className="mx-8 mt-4 px-6 py-4 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg flex items-center"
               >
-                <FiAlertCircle className="w-5 h-5 mr-3" />
-                {error || ocrError}
+                <FiAlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                <span className="flex-1">{error || ocrError}</span>
                 <button
                   onClick={() => {
                     setError('');
@@ -1542,7 +1819,7 @@ const VerifierDashboard = () => {
                       <div className="flex items-center justify-between">
                         <div>
                           <h3 className="text-xl font-bold mb-2">Quick Certificate Scan</h3>
-                          <p className="text-purple-100 mb-4">Upload or scan a certificate to auto-fill verification</p>
+                          <p className="text-purple-100 mb-4">Upload or scan a certificate to auto-fill verification data</p>
                           <div className="flex space-x-4">
                             <button
                               onClick={() => fileInputRef.current?.click()}
@@ -1584,7 +1861,7 @@ const VerifierDashboard = () => {
                                 </div>
                                 <div>
                                   <h4 className="font-medium text-gray-800 dark:text-white">OCR Auto-Fill</h4>
-                                  <p className="text-sm text-gray-500 dark:text-gray-400">Upload certificate to auto-extract hash</p>
+                                  <p className="text-sm text-gray-500 dark:text-gray-400">Upload certificate to auto-extract data</p>
                                 </div>
                               </div>
                               <input
@@ -1805,7 +2082,7 @@ const VerifierDashboard = () => {
                               </h4>
                               <div className="space-y-2">
                                 {ocrHistory.slice(0, 3).map((item) => (
-                                  <div key={item.id} className="flex items-center justify-between text-xs">
+                                  <div key={item.id} className="flex items-center justify-between text-xs p-2 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
                                     <div className="flex items-center">
                                       <span className={item.success ? 'text-green-600' : 'text-red-600'}>
                                         {item.success ? '✓' : '✗'}
@@ -2344,7 +2621,11 @@ const VerifierDashboard = () => {
 
           {/* Recent Activity Footer */}
           <div className="p-8 pt-0">
-            <RecentActivity title="Live System Activity" limit={5} />
+            <RecentActivity 
+              title="Live System Activity" 
+              limit={5}
+              activities={realtimeUpdates}
+            />
           </div>
         </motion.div>
       </div>

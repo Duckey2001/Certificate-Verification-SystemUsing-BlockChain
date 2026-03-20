@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M-Pesa USSD Push Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #27ae60;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .step {
+            display: none;
+            margin: 20px 0;
+        }
+        .step.active {
+            display: block;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input[type="text"], input[type="tel"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            border-color: #27ae60;
+            outline: none;
+        }
+        button {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #219a52;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #ecf0f1;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #27ae60;
+            transition: width 0.3s ease;
+        }
+        .session-info {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        .sms-preview {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            border-left: 4px solid #2196f3;
+            margin: 10px 0;
+            font-family: monospace;
+        }
+        .mpesa-popup {
+            background: #4caf50;
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border: 2px solid #388e3c;
+            font-family: Arial, sans-serif;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .mpesa-popup h3 {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+            padding-bottom: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 M-Pesa USSD Push Test</h1>
+        
+        <div class="progress-bar">
+            <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+        </div>
+
+        <!-- Step 1: USSD Push Initiation -->
+        <div class="step active" id="step1">
+            <h2>Step 1: Initiate USSD Push</h2>
+            <p>This will send a USSD prompt asking the user to enter their phone number.</p>
+            <button onclick="initiateUSSD()">📱 Send USSD Push</button>
+        </div>
+
+        <!-- Step 2: Phone Number Entry -->
+        <div class="step" id="step2">
+            <h2>Step 2: Enter Phone Number</h2>
+            <div class="status info">
+                📱 M-Pesa Popup: "Please enter your phone number to continue"
+            </div>
+            <div class="mpesa-popup" id="phonePopup">
+                <h3>M-Pesa</h3>
+                <p>Please enter your phone number to continue</p>
+            </div>
+            <div class="form-group">
+                <label for="phoneNumber">Phone Number (Lesotho):</label>
+                <input type="tel" id="phoneNumber" placeholder="+2665XXXXXXX or 05XXXXXXX">
+                <small>Format: +2665XXXXXXX, 05XXXXXXX, or 5XXXXXXX</small>
+            </div>
+            <button onclick="enterPhoneNumber()">📞 Submit Phone Number</button>
+        </div>
+
+        <!-- Step 3: PIN Request -->
+        <div class="step" id="step3">
+            <h2>Step 3: PIN Verification</h2>
+            <div class="status info">
+                � M-Pesa Popup: "Enter your M-Pesa PIN to continue"
+            </div>
+            <div class="mpesa-popup" id="pinPopup"></div>
+            <div class="form-group">
+                <label for="pinInput">Enter PIN:</label>
+                <input type="text" id="pinInput" placeholder="Enter 4-digit PIN" maxlength="4">
+            </div>
+            <button onclick="verifyPIN()">🔓 Verify PIN</button>
+            <button onclick="resendPIN()">🔄 Resend PIN</button>
+        </div>
+
+        <!-- Step 4: B2B Payment Processing -->
+        <div class="step" id="step4">
+            <h2>Step 4: B2B Payment Processing</h2>
+            <div class="status info">
+                💰 Processing B2B payment from University to ECOL...
+            </div>
+            <div class="mpesa-popup" id="b2bPopup"></div>
+            <div class="form-group">
+                <label>Payment Details:</label>
+                <div id="paymentDetails"></div>
+            </div>
+            <button onclick="processB2BPayment()">💰 Process B2B Payment</button>
+        </div>
+
+        <!-- Step 5: Final Result -->
+        <div class="step" id="step5">
+            <h2>Step 5: Transaction Complete</h2>
+            <div class="mpesa-popup" id="resultPopup"></div>
+            <div id="finalResult"></div>
+            <button onclick="resetFlow()">🔄 Start New Transaction</button>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="statusMessage"></div>
+        <div id="sessionInfo" class="session-info" style="display: none;"></div>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        let ussdSessionId = null;
+        let pinSessionId = null;
+        let transactionData = {};
+
+        function updateProgress(step) {
+            const progress = (step / 5) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+        }
+
+        function showStep(stepNumber) {
+            document.querySelectorAll('.step').forEach(step => {
+                step.classList.remove('active');
+            });
+            document.getElementById(`step${stepNumber}`).classList.add('active');
+            currentStep = stepNumber;
+            updateProgress(stepNumber);
+        }
+
+        function showStatus(message, type = 'info') {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.className = `status ${type}`;
+            statusDiv.textContent = message;
+            statusDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function updateSessionInfo(info) {
+            const sessionDiv = document.getElementById('sessionInfo');
+            sessionDiv.innerHTML = `<strong>Session Info:</strong><br>${JSON.stringify(info, null, 2)}`;
+            sessionDiv.style.display = 'block';
+        }
+
+        async function initiateUSSD() {
+            try {
+                showStatus('Initiating USSD push...', 'info');
+                
+                const response = await fetch('/api/ussd/initiate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    ussdSessionId = data.ussd_session_id;
+                    showStatus('USSD push sent! User should see prompt to enter phone number.', 'success');
+                    updateSessionInfo(data);
+                    
+                    // Move to phone number entry step
+                    showStep(2);
+                } else {
+                    showStatus(data.message || 'Failed to initiate USSD', 'error');
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function enterPhoneNumber() {
+            const phoneNumber = document.getElementById('phoneNumber').value.trim();
+            
+            if (!phoneNumber) {
+                showStatus('Please enter a phone number', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Submitting phone number...', 'info');
+                
+                const response = await fetch('/api/ussd/enter-phone', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        ussd_session_id: ussdSessionId,
+                        phone_number: phoneNumber
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus('Phone number received! Sending PIN SMS...', 'success');
+                    updateSessionInfo(data);
+                    
+                    // Auto-send PIN SMS after a short delay
+                    setTimeout(() => sendPinSMS(), 1000);
+                } else {
+                    showStatus(data.message || 'Failed to submit phone number', 'error');
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function sendPinSMS() {
+            if (!ussdSessionId) {
+                showStatus('No USSD session found', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Sending PIN verification SMS...', 'info');
+                
+                const response = await fetch('/api/ussd/send-pin-sms', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ ussd_session_id: ussdSessionId })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    pinSessionId = data.pin_session_id;
+                    
+                    // Get the PIN from console logs (simulated)
+                    const pin = await getGeneratedPin();
+                    
+                    document.getElementById('pinPopup').innerHTML = 
+                        `<h3>M-Pesa</h3>
+                         <p>Enter your M-Pesa PIN to continue</p>
+                         <p><small>Check console for PIN: <strong>${pin}</strong></small></p>`;
+                    
+                    showStatus('PIN popup sent!', 'success');
+                    showStep(3);
+                    updateSessionInfo(data);
+                } else {
+                    showStatus(data.message || 'Failed to send PIN', 'error');
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function getGeneratedPin() {
+            // In a real implementation, you wouldn't have access to the generated PIN
+            // This is just for testing purposes
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    // Simulate getting PIN from console (in real app, user would check their phone)
+                    const pins = ['1234', '5678', '9012', '3456'];
+                    resolve(pins[Math.floor(Math.random() * pins.length)]);
+                }, 500);
+            });
+        }
+
+        async function verifyPIN() {
+            const pin = document.getElementById('pinInput').value.trim();
+            
+            if (!pin) {
+                showStatus('Please enter the PIN', 'error');
+                return;
+            }
+
+            try {
+                showStatus('Verifying PIN...', 'info');
+                
+                const response = await fetch('/api/ussd/verify-pin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        pin_session_id: pinSessionId,
+                        pin: pin
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showStatus('PIN verified successfully!', 'success');
+                    updateSessionInfo(data);
+                    
+                    // Auto-proceed to transaction confirmation
+                    setTimeout(() => confirmTransactionStep(), 1000);
+                } else {
+                    showStatus(data.message || 'PIN verification failed', 'error');
+                    updateSessionInfo(data);
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function resendPIN() {
+            await sendPinSMS();
+        }
+
+        async function confirmTransactionStep() {
+            try {
+                showStatus('Preparing B2B payment...', 'info');
+                
+                const response = await fetch('/api/ussd/confirm-transaction', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        pin_session_id: pinSessionId,
+                        amount: 50.00,
+                        reference: 'VERIFY-CERT-001'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    transactionData = data;
+                    
+                    document.getElementById('b2bPopup').innerHTML = 
+                        `<h3>M-Pesa</h3>
+                         <p>💰 B2B Payment Processing...</p>
+                         <p><strong>From:</strong> UNI001 (University)</p>
+                         <p><strong>To:</strong> 110799 (ECOL)</p>
+                         <p><strong>Amount:</strong> M${data.amount}</p>
+                         <p><strong>Transaction ID:</strong> ${data.transaction_id}</p>`;
+                    
+                    document.getElementById('paymentDetails').innerHTML = 
+                        `<strong>Transaction ID:</strong> ${data.transaction_id}<br>
+                         <strong>Conversation ID:</strong> ${data.conversation_id}<br>
+                         <strong>Amount:</strong> M${data.amount}<br>
+                         <strong>Reference:</strong> ${data.transaction_reference}<br>
+                         <strong>Response Code:</strong> ${data.response_code}<br>
+                         <strong>Response:</strong> ${data.response_description}<br>
+                         <strong>Phone:</strong> ${data.phone_number}`;
+                    
+                    showStatus('B2B payment processed successfully!', 'success');
+                    showStep(4);
+                    updateSessionInfo(data);
+                } else {
+                    showStatus(data.message || 'Failed to process B2B payment', 'error');
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            }
+        }
+
+        async function processB2BPayment() {
+            try {
+                showStatus('Finalizing B2B transaction...', 'info');
+                
+                const response = await fetch('/api/ussd/finalize-transaction', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        pin_session_id: pinSessionId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const resultDiv = document.getElementById('finalResult');
+                    
+                    resultDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ B2B Transaction Completed Successfully!
+                        </div>
+                        <div class="mpesa-popup">
+                            <h3>M-Pesa</h3>
+                            <p>Certificate verification payment completed!</p>
+                            <p><strong>Transaction ID: ${data.transaction_id}</strong></p>
+                        </div>
+                        <h3>📩 SMS Confirmations Sent:</h3>
+                        <div class="mpesa-popup">
+                            <h4>To University (UNI001):</h4>
+                            <p>${data.sms_confirmations.university}</p>
+                        </div>
+                        <div class="mpesa-popup">
+                            <h4>To ECOL (110799):</h4>
+                            <p>${data.sms_confirmations.ecol}</p>
+                        </div>
+                        <h3>🔄 Callback Payload:</h3>
+                        <div class="session-info">
+                            <pre>${JSON.stringify(data.callback_payload, null, 2)}</pre>
+                        </div>
+                        <p><strong>Transaction ID:</strong> ${data.transaction_id}</p>
+                        <p><strong>Amount:</strong> M${data.amount}</p>
+                        <p><strong>Status:</strong> ${data.status}</p>
+                        <p><strong>Completed:</strong> ${new Date(data.completed_at).toLocaleString()}</p>
+                    `;
+                    
+                    showStatus('B2B transaction completed!', 'success');
+                    showStep(5);
+                    updateProgress(100);
+                    updateSessionInfo(data);
+                } else {
+                    showStatus(data.message || 'Failed to complete B2B transaction', 'error');
+                }
+            } catch (error) {
+                showStatus('Network error: ' + error.message, 'error');
+            }
+        }
+
+        function resetFlow() {
+            currentStep = 1;
+            ussdSessionId = null;
+            pinSessionId = null;
+            transactionData = {};
+            
+            document.getElementById('phoneNumber').value = '';
+            document.getElementById('pinInput').value = '';
+            document.getElementById('statusMessage').style.display = 'none';
+            document.getElementById('sessionInfo').style.display = 'none';
+            
+            showStep(1);
+            updateProgress(0);
+            showStatus('Ready for new transaction', 'info');
+        }
+
+        // Initialize
+        showStatus('Ready to test USSD flow', 'info');
+    </script>
+</body>
+</html>
